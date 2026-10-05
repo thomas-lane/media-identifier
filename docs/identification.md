@@ -6,6 +6,12 @@ recognition mishears words, subtitles paraphrase, and songs repeat lines, so no 
 comparison is trusted on its own and none requires an exact match. Every file is scored against
 every candidate episode, and the best overall assignment of files to episodes wins.
 
+![One file identified step by step: the words heard in the file, the same words in an episode's
+subtitles, the file's chapter inside the play-all, the four signals, and the margin between the
+best and second-best episode](images/identification.svg)
+
+The figure uses sample values, not measured results.
+
 Terms such as *play-all*, *window*, *margin* and *title hook* are defined in
 [the glossary](glossary.md). Which online services supply episode lists and reference text is
 described in [sources.md](sources.md).

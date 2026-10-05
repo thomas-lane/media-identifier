@@ -1,4 +1,9 @@
-<p align="center"><img src="assets/brand/placeholder-icon.png" width="96" alt="Media Identifier icon"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/header-dark.svg">
+    <img src="docs/images/header-light.svg" width="440" alt="Media Identifier">
+  </picture>
+</p>
 
 # Media Identifier
 
@@ -9,6 +14,8 @@ subtitles, lyrics and length, uses the disc's "play all" title to check the orde
 a show, season, episode and title for every file with the evidence behind it. After you review
 the suggestions it renames the files in place for Jellyfin, Plex or Kodi, and History can undo
 the renames. Audio and video never leave your computer.
+
+<p align="center"><img src="docs/images/identification.svg" width="720" alt="How one file is identified: the words heard in the file are compared with each episode's subtitles, the file is located inside the play-all title, and the signals are combined into the best overall assignment."></p>
 
 **Download:** see [Releases](https://github.com/thomas-lane/media-identifier/releases) and the
 [install guide](docs/install.md) (the builds are unsigned, so the first launch needs one extra

@@ -52,6 +52,7 @@ pub fn run() {
             commands::undo_history,
             updater::check_for_update,
             updater::download_update,
+            updater::cancel_update_download,
             updater::install_update_and_relaunch,
             updater::skip_update_version,
         ])

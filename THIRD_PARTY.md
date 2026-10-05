@@ -65,3 +65,5 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | Component | License | Used for |
 |---|---|---|
 | csv | Unlicense OR MIT | CSV export |
+| libc (macOS only) | MIT OR Apache-2.0 | `renamex_np` for renames that never replace a file |
+| windows-sys (Windows only) | MIT OR Apache-2.0 | `MoveFileExW` for renames that never replace a file |

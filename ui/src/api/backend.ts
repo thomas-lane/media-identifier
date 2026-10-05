@@ -81,7 +81,12 @@ export interface Backend {
   checkForUpdate(): Promise<UpdateCheck>;
   /** "Install update": downloads; progress through `onUpdateEvent`. */
   downloadUpdate(): Promise<void>;
-  /** "Relaunch now". Rejects with code `busy` while identification runs. */
+  /** "Cancel" while an update downloads; `downloadUpdate` then rejects with code `cancelled`. */
+  cancelUpdateDownload(): Promise<void>;
+  /**
+   * "Relaunch now". Rejects with code `busy` while identification runs; the app then installs
+   * and relaunches by itself when the job ends.
+   */
   installUpdateAndRelaunch(): Promise<void>;
   /** "Skip this version". */
   skipUpdateVersion(version: string): Promise<void>;

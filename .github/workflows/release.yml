@@ -1,0 +1,225 @@
+# Builds the macOS and Windows installers when a version tag (v*) is pushed, signs the update
+# files, and attaches everything, latest.json and the FFmpeg source to a draft GitHub release.
+# Owner: release module. Procedure: docs/development.md, "Releases".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOWNLOAD_TEXT: >-
+    Download the .dmg for macOS (Apple Silicon) or the -setup.exe for Windows (64-bit).
+    The apps are not code-signed; docs/install.md shows the one-time step to open them.
+    ffmpeg-*.tar.xz is the source of the included FFmpeg programs (LGPL).
+
+jobs:
+  prepare:
+    name: Check the tag and create the draft release
+    runs-on: ubuntu-latest
+    outputs:
+      release-id: ${{ steps.release.outputs.id }}
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches the app version in Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match version ${version} in Cargo.toml"
+            exit 1
+          fi
+
+      - name: The updater signing key is configured
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing (see docs/development.md)"
+            exit 1
+          fi
+
+      - name: The FFmpeg notice matches the build script
+        run: scripts/build-ffmpeg.sh --check-notice
+
+      # The annotated tag's message is the release notes: the update dialog shows them as
+      # "What's new" (the notes field of latest.json).
+      - name: Read the release notes from the tag
+        id: notes
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          if [ "$(git cat-file -t "${GITHUB_REF_NAME}")" = "tag" ]; then
+            notes=$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "${GITHUB_REF_NAME}")
+          else
+            notes="Media Identifier ${GITHUB_REF_NAME#v}"
+          fi
+          {
+            echo "notes<<END_OF_NOTES"
+            printf '%s\n' "${notes}"
+            echo "END_OF_NOTES"
+          } >> "${GITHUB_OUTPUT}"
+
+      # One draft per tag, created here so the two build jobs upload to the same release. A
+      # re-run reuses the draft it finds.
+      - name: Create or find the draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"${GITHUB_REF_NAME}\") | .id" | head -n 1)
+          if [ -z "${id}" ]; then
+            id=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="${GITHUB_REF_NAME}" \
+              -f name="Media Identifier ${GITHUB_REF_NAME}" \
+              -f body="$(printf '%s\n\n%s' "${NOTES}" "${DOWNLOAD_TEXT}")" \
+              -F draft=true -F prerelease=false --jq .id)
+          fi
+          echo "id=${id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore the FFmpeg source
+        uses: actions/cache@v6
+        with:
+          path: third_party/ffmpeg/src/ffmpeg-*.tar.xz
+          key: ffmpeg-source-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+          enableCrossOsArchive: true
+
+      # The LGPL asks that the source of distributed FFmpeg binaries is available from the same
+      # place; the release is that place.
+      - name: Attach the FFmpeg source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        run: |
+          tarball=$(scripts/build-ffmpeg.sh --fetch-source)
+          name=$(basename "${tarball}")
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" --jq '.[].name')
+          if printf '%s\n' "${existing}" | grep -qxF "${name}"; then
+            echo "${name} is already attached"
+            exit 0
+          fi
+          curl --fail --silent --show-error --request POST \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Content-Type: application/x-xz" \
+            --data-binary "@${tarball}" \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${name}" \
+            > /dev/null
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The ffmpeg and ffprobe sidecars are rebuilt only when the build script (which pins the
+      # source version, checksum and configure options) changes.
+      - name: Restore ffmpeg sidecars
+        id: ffmpeg-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            src-tauri/binaries/ffmpeg-${{ matrix.target }}*
+            src-tauri/binaries/ffprobe-${{ matrix.target }}*
+          key: ffmpeg-${{ matrix.target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Restore the FFmpeg source
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v6
+        with:
+          path: third_party/ffmpeg/src/ffmpeg-*.tar.xz
+          key: ffmpeg-source-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+          enableCrossOsArchive: true
+
+      - name: Set up MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make
+            curl
+            diffutils
+            tar
+            xz
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-binutils
+
+      - name: Build ffmpeg sidecars (macOS)
+        if: runner.os == 'macOS' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh --target ${{ matrix.target }}
+
+      - name: Build ffmpeg sidecars (Windows)
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: scripts/build-ffmpeg.sh --target ${{ matrix.target }}
+
+      - name: Verify ffmpeg sidecars (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/build-ffmpeg.sh --verify --target ${{ matrix.target }}
+
+      - name: Verify ffmpeg sidecars (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: scripts/build-ffmpeg.sh --verify --target ${{ matrix.target }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+
+      # Builds the app (MI_REQUIRE_SIDECARS=1 makes a missing or empty sidecar a build error),
+      # bundles it (.dmg and .app.tar.gz on macOS, the per-user NSIS installer on Windows),
+      # signs the update files with the private key, uploads them to the draft release and
+      # merges this platform into the release's latest.json, whose notes are releaseBody.
+      - name: Build, sign and upload
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MI_REQUIRE_SIDECARS: "1"
+          # Compile whisper.cpp's CPU code for a baseline processor rather than the runner's own
+          # (docs/development.md, "Speech recognition"); otherwise users' PCs without AVX-512 crash.
+          GGML_NATIVE: "OFF"
+        with:
+          tauriScript: node ui/node_modules/@tauri-apps/cli/tauri.js
+          args: --target ${{ matrix.target }}
+          releaseId: ${{ needs.prepare.outputs.release-id }}
+          tagName: ${{ github.ref_name }}
+          releaseBody: ${{ needs.prepare.outputs.notes }}
+          releaseDraft: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true

@@ -17,8 +17,9 @@ npm --prefix ui run build                                # typecheck + productio
 npm --prefix ui run dev:mock                             # UI in a normal browser against the mock backend (http://localhost:5173)
 npm --prefix ui exec -- tauri dev                        # the desktop app with live reload
 npm --prefix ui exec -- tauri build --debug --no-bundle  # a debug app binary with the bundled UI
-scripts/build-ffmpeg.sh                                  # build the ffmpeg/ffprobe sidecars for this Mac (a few minutes)
+scripts/build-ffmpeg.sh                                  # build the ffmpeg/ffprobe sidecars for this computer (a few minutes)
 MI_REQUIRE_FFMPEG_TESTS=1 cargo test -p mi-media --test ffmpeg  # mi-media against the built sidecars
+actionlint                                               # lint .github/workflows after editing them
 ```
 
 The Tauri CLI is an npm dev dependency of `ui/`; run it from the repository root (as above) so
@@ -87,7 +88,8 @@ reported as real-world accuracy.
 - **Models are verified**: a model file exists under its final name only after its size and
   SHA-256 matched the pinned values in `mi_transcribe::catalog`; downloads resume from `.part`.
 - **The play-all and extras are never renamed**, and nothing is overwritten: every rename or copy
-  is journaled before it happens and can be undone from History.
+  uses an operation that fails when the target exists, is journaled before it happens, and can be
+  undone from History.
 - **Disc order is evidence of order only**: an untrustworthy play-all (overlaps, shuffles, too few
   files located) is ignored, never forced.
 - **Missing signals are not zero**: a signal that cannot be measured is left out of the combined
@@ -96,8 +98,8 @@ reported as real-world accuracy.
   `mi-types` and generated for the UI; the UI never redeclares it.
 - **Keys stay private**: API keys are stored in `api-keys.json` (mode 0600 on macOS), separate
   from settings, and never returned to the UI or logged.
-- **Updates never interrupt work**: `install_update_and_relaunch` refuses while a job runs;
-  background update checks fail quietly.
+- **Updates never interrupt work**: `install_update_and_relaunch` returns `Busy` while a job runs
+  and installs only after it ends; background update checks fail quietly (log only).
 - **Released apps run only bundled sidecars**: `PATH` lookup is enabled only in debug builds, and
   `MI_REQUIRE_SIDECARS=1` (release builds) fails the build on a missing or empty sidecar.
 

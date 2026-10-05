@@ -11,9 +11,13 @@
 
 ## Build and test
 
-The commands are listed in [AGENTS.md](../AGENTS.md#commands). CI runs `cargo fmt --check`,
-`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and in `ui/`
-`npm ci`, `npm run lint`, `npm test` and `npm run build`.
+The commands are listed in [AGENTS.md](../AGENTS.md#commands). CI
+(`.github/workflows/ci.yml`) runs on every push to `main` and every pull request, on
+`macos-latest` and `windows-latest`: in `ui/` `npm ci`, `npm run lint`, `npm test` and
+`npm run build`, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+and `cargo test --workspace`. A third job on Linux lints the workflow files with
+[actionlint](https://github.com/rhysd/actionlint) and runs `scripts/build-ffmpeg.sh --check-notice`.
+Run `actionlint` locally (`brew install actionlint`) after editing a workflow.
 
 ## Generated TypeScript types
 
@@ -81,60 +85,43 @@ cargo run --release -p mi-transcribe --example transcribe -- <model.bin> <audio.
 
 ## ffmpeg sidecars
 
-<!-- owner: release module; written by the media module -->
+<!-- owner: release module -->
 
-The app runs two helper programs, ffmpeg and ffprobe (see
-[architecture](architecture.md#helper-executables)). Releases ship a minimal build made by
-`scripts/build-ffmpeg.sh` from the pinned FFmpeg source release: only the demuxers, audio and
-text-subtitle decoders, filters, encoders and muxers the app uses, no network access, no external
-libraries and no GPL parts. Keeping it minimal keeps the download small (about 3.5 MB per program
-on macOS) and keeps the license LGPL-2.1-or-later, which allows shipping the programs inside an
-MIT app.
+The app runs `ffmpeg` and `ffprobe` as separate programs ([sidecars](glossary.md#general)) that
+are bundled next to its executable. `scripts/build-ffmpeg.sh` builds them from a pinned FFmpeg
+source tarball (version and SHA-256 at the top of the script) into
+`src-tauri/binaries/ffmpeg-<target triple>` and `ffprobe-<target triple>` (`.exe` on Windows):
 
-```bash
-scripts/build-ffmpeg.sh                                   # this Mac: src-tauri/binaries/{ffmpeg,ffprobe}-aarch64-apple-darwin
-scripts/build-ffmpeg.sh --target x86_64-pc-windows-msvc   # Windows .exe files, cross-compiled with mingw-w64
-scripts/build-ffmpeg.sh --print-configure                 # print the configure line without building
-scripts/build-ffmpeg.sh --force                           # rebuild even when the stamp matches
-```
-
-The script:
-
-1. downloads `ffmpeg-<version>.tar.xz` into `third_party/ffmpeg/src/` once, and refuses it unless
-   its SHA-256 equals the pinned value at the top of the script;
-2. refuses to build unless the exact configure line appears in `LICENSES/ffmpeg/NOTICE.md`, so the
-   license notice always states the build it describes;
-3. configures in `third_party/ffmpeg/build/<target>/` and fails when configure ignores a
-   misspelled component name, drops ffmpeg or ffprobe, or enables GPL code;
-4. builds only the two programs, strips them (and gives them the ad-hoc signature Apple Silicon
-   requires), and copies them to `src-tauri/binaries/<name>-<target triple>[.exe]`, the names
-   Tauri's `bundle.externalBin` expects;
-5. writes `third_party/ffmpeg/build/<target>/stamp.txt`; a later run with the same version and
-   flags skips straight to step 4.
-
-A macOS build takes a few minutes on an M-series Mac and needs the Xcode command-line
-tools. The Windows target needs `x86_64-w64-mingw32-gcc` on `PATH`: `brew install mingw-w64` on
-macOS, `apt-get install mingw-w64` on Ubuntu, or the MINGW64 shell of MSYS2 on Windows. The
-Windows programs are linked statically (`-static`, Windows' own threads), so they use only DLLs
-that are part of Windows 10 and later and need nothing installed next to them. They are named for the `x86_64-pc-windows-msvc` triple because that is the Rust
-target of the Windows app, which is how Tauri finds them.
-
-`third_party/ffmpeg/src/`, `third_party/ffmpeg/build/` and `src-tauri/binaries/*` are not
-committed. Without built sidecars, development builds use `ffmpeg` and `ffprobe` from `PATH`
-(`brew install ffmpeg`); released builds use only the bundled programs (see
-[AGENTS.md](../AGENTS.md#invariants-keep-tests-for-each)).
-
-**Changing the FFmpeg version or components.** Edit `FFMPEG_VERSION`, `FFMPEG_URL` and
-`FFMPEG_SHA256` (check the tarball's `.asc` signature against the FFmpeg release key
-`FCF986EA15E6E293A5644F10B4322F04D67658D8` before pinning its hash) or the flag lists in the
-script; run `scripts/build-ffmpeg.sh --print-configure` for each target and put the printed lines
-into `LICENSES/ffmpeg/NOTICE.md`, together with the new version, URL and hash; update the
-component table in `docs/architecture.md`; then build and run the ffmpeg tests against the new
-programs:
+| Target | Where to run it | Needs |
+|---|---|---|
+| `aarch64-apple-darwin` | a Mac with Apple Silicon | Xcode command-line tools |
+| `x86_64-pc-windows-msvc` | an [MSYS2](https://www.msys2.org) MINGW64 shell | `pacman -S make curl diffutils tar xz mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm mingw-w64-x86_64-binutils` |
 
 ```bash
-MI_REQUIRE_FFMPEG_TESTS=1 cargo test -p mi-media --test ffmpeg
+scripts/build-ffmpeg.sh                    # build for this computer (about a minute on Apple Silicon)
+scripts/build-ffmpeg.sh --verify           # check built sidecars without rebuilding
+scripts/build-ffmpeg.sh --print-configure  # the configure options for this computer
+scripts/build-ffmpeg.sh --check-notice     # third_party/ffmpeg/NOTICE.md matches the script
 ```
+
+The build is minimal on purpose. `--disable-everything` and an explicit list of demuxers, decoders,
+parsers, filters, encoders and muxers (the components in
+[architecture.md](architecture.md#helper-executables)) keep each program between 3 and 4.5 MB.
+Leaving out `--enable-gpl` and `--enable-nonfree` keeps it under the LGPL, which the app's MIT
+license can ship alongside. `--disable-autodetect` keeps libraries that happen to be installed on
+the build computer out of the programs, so they link only operating system libraries and run on
+any supported system. Homebrew's ffmpeg is not shipped for these reasons: it is a GPL build that
+links dozens of Homebrew libraries. Development builds still fall back to it on `PATH` when the
+sidecars are missing.
+
+The build ends with the same checks as `--verify`: every required component is listed by the
+built `ffmpeg`, both programs report the LGPL and no GPL or non-free option, and they link only
+system libraries (`otool -L` on macOS; `objdump -p` on Windows, allowing Windows system DLLs only).
+
+Earlier, the build also fails when `configure` ignores a misspelled component name, drops
+ffmpeg or ffprobe, or enables GPL code. The source tarball is downloaded once into
+`third_party/ffmpeg/src/` and refused unless its SHA-256 matches; `third_party/ffmpeg/src/`,
+`third_party/ffmpeg/build/` and `src-tauri/binaries/*` are not committed.
 
 **Testing against real ffmpeg.** `crates/mi-media/tests/ffmpeg.rs` generates small files in a
 temporary folder (tones whose pitch changes over time, chapters, SubRip, ASS and MP4 text
@@ -143,36 +130,109 @@ the crate's real command lines on them. It tests `MI_FFMPEG`/`MI_FFPROBE` when b
 the built sidecars for this platform, else `ffmpeg`/`ffprobe` on `PATH`. The fixtures are made
 with a full ffmpeg (`MI_TEST_FIXTURE_FFMPEG`, else `ffmpeg` on `PATH`), because the minimal build
 has no encoders for them. Without these programs the tests print why and pass without checking,
-so `cargo test` works everywhere; `MI_REQUIRE_FFMPEG_TESTS=1` makes a missing program a failure.
+so `cargo test` works everywhere (CI included, where no sidecars are built);
+`MI_REQUIRE_FFMPEG_TESTS=1` makes a missing program a failure:
 
-**Building the sidecars in CI.** A release build needs the sidecars in `src-tauri/binaries/`
-before `tauri-action` runs, with `MI_REQUIRE_SIDECARS=1` set so that a missing sidecar fails the
-build instead of shipping an empty placeholder. These jobs produce and check them:
+```bash
+MI_REQUIRE_FFMPEG_TESTS=1 cargo test -p mi-media --test ffmpeg
+```
 
-| Job | Runner | Steps |
-|---|---|---|
-| macOS sidecars | `macos-latest` (arm64) | restore a cache of `third_party/ffmpeg/src` and `src-tauri/binaries/*-aarch64-apple-darwin` keyed on the hash of `scripts/build-ffmpeg.sh`; on a miss run `scripts/build-ffmpeg.sh` |
-| Windows sidecars | `ubuntu-latest` | `sudo apt-get install -y mingw-w64`; restore a cache keyed the same way; on a miss run `scripts/build-ffmpeg.sh --target x86_64-pc-windows-msvc` (the script reads the triple from the flag, so it needs no Rust toolchain for this target); upload `src-tauri/binaries/*.exe` as an artifact |
-| Windows app | `windows-latest` | download the artifact into `src-tauri/binaries/`; install a full ffmpeg for the fixtures (`choco install ffmpeg`); run `MI_REQUIRE_FFMPEG_TESTS=1 cargo test -p mi-media --test ffmpeg` with `MI_FFMPEG`/`MI_FFPROBE` pointing at the sidecars; then `tauri-action` |
+To change the components, edit the lists at the top of the script, then update the option lines in
+`third_party/ffmpeg/NOTICE.md` (`--check-notice` compares them line by line, in CI and in the
+release workflow) and the component table in `docs/architecture.md`. The release workflow caches
+the built sidecars under a key derived from the script's contents, so any change to the script
+rebuilds them.
 
-Cross-compiling the Windows programs on Linux avoids building FFmpeg's shell-based configure under
-MSYS2 on the Windows runner, which is much slower because the configure script starts thousands of processes. The Windows job runs the ffmpeg tests
-because the Linux job cannot execute the `.exe` files it builds.
-
-A release also has to carry the license files and the source: `LICENSES/ffmpeg/NOTICE.md` and
-`LICENSES/ffmpeg/COPYING.LGPLv2.1` (the license text from the FFmpeg tarball) belong in the app
-bundle as resources, and the pinned source tarball belongs among the release's files, because the
-LGPL requires that whoever receives the programs can also get the source they were built from.
+The LGPL asks that people who receive the programs can get their source and replace them. The app
+bundles `third_party/ffmpeg/NOTICE.md` (version, source, checksum, configure options, how to
+replace the programs) and FFmpeg's `COPYING.LGPLv2.1` under `licenses/ffmpeg/` in its resources
+(`bundle.resources` in `src-tauri/tauri.conf.json`), and the release workflow attaches the source
+tarball to every release.
 
 ## Updater signing key
 
 <!-- owner: release module -->
 
 Updates are verified with a minisign key pair created by `tauri signer generate`. The public key
-is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). The private key lives outside the
-repository at `~/.tauri/media-identifier-updater.key` (no password) and is given to the release
-workflow as a GitHub Actions secret.
+is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) and is compiled into the app. The
+private key lives outside the repository at `~/.tauri/media-identifier-updater.key` (no password)
+and is given to the release workflow as the GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY`:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo thomas-lane/media-identifier < ~/.tauri/media-identifier-updater.key
+```
+
+The secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` stays unset, because this key has no password
+(GitHub does not store empty secrets, and an unset secret reaches the workflow as an empty
+password). A key generated with a password needs that secret too.
+
+**Back up the private key** somewhere other than this computer, such as a password manager. An
+installed copy of the app accepts only updates signed with the key whose public half it was built
+with. If the private key is lost, no installed copy can ever be updated again; every user would
+have to download and install a new version by hand. To replace the key while it is still
+available: generate a new pair, put the new public key in `tauri.conf.json`, publish one release
+signed with the old key (so installed copies accept it and receive the new public key), then
+replace the secret with the new private key for later releases.
+
+Never commit the private key or print it in a log; `.gitignore` excludes `*.key`.
 
 ## Releases
 
 <!-- owner: release module -->
+
+Builds are not code-signed on either system. On macOS the bundler gives the app an ad-hoc
+signature (`bundle.macOS.signingIdentity: "-"`), which Apple Silicon requires to run any code;
+it identifies no developer, so macOS still asks the user to confirm the first launch
+([install.md](install.md)).
+
+To publish a version:
+
+1. Set the version in the root `Cargo.toml` (`[workspace.package] version`), which is the app
+   version Tauri uses, and the same in `ui/package.json`. Commit.
+2. Tag the commit with an annotated tag whose message is the release notes, and push the tag.
+   The message becomes the "What's new" text of the update dialog and the top of the release
+   page (a lightweight tag gets the text "Media Identifier <version>"):
+
+   ```bash
+   git tag -a v0.2.0 -m "Kodi naming." -m "Fixed: very short files were skipped."
+   git push origin v0.2.0
+   ```
+
+3. `.github/workflows/release.yml` runs:
+   - **prepare** (Linux) fails unless the tag equals `v` + the `Cargo.toml` version, the
+     `TAURI_SIGNING_PRIVATE_KEY` secret is set, and `--check-notice` passes. It reads the notes
+     from the tag, creates a draft release for the tag (or reuses the draft a previous run
+     created) and attaches the FFmpeg source tarball.
+   - **build** runs once on `macos-latest` for `aarch64-apple-darwin` and once on
+     `windows-latest` for `x86_64-pc-windows-msvc`. It restores or builds the ffmpeg sidecars,
+     then [tauri-action](https://github.com/tauri-apps/tauri-action) runs `tauri build` with
+     `MI_REQUIRE_SIDECARS=1` (a missing or empty sidecar fails the build), signs the update files
+     with the private key, uploads them to the draft, and merges its platform into the
+     release's `latest.json` together with the notes.
+4. Check the draft. It holds the macOS `.dmg`, the macOS update archive (`.app.tar.gz` and its
+   `.sig`), the Windows installer (`-setup.exe`, per-user, no administrator rights) and its
+   `.sig`, `latest.json` and `ffmpeg-<version>.tar.xz`. Editing the release page later does not
+   change `latest.json`; to change the notes the update dialog shows, edit its `notes` field and
+   upload it again (the signatures cover the downloads, not this file).
+5. Publish the draft. The app's update endpoint is
+   `https://github.com/thomas-lane/media-identifier/releases/latest/download/latest.json`, and
+   GitHub serves `releases/latest` from the newest published release that is not a draft or
+   pre-release, so installed copies see the version only once it is published.
+
+The repository and its releases are private for now. GitHub answers requests for a private
+repository's release files only when they carry an access token, and the app sends none, so
+every update check fails until the repository is public: background checks log the failure and
+"Check now" shows "Couldn't check for updates". Putting a token into the app is not an option,
+because anyone with a copy could read it.
+
+A release build can be made locally the same way (the signing key variables are needed only
+because `createUpdaterArtifacts` is on):
+
+```bash
+scripts/build-ffmpeg.sh
+MI_REQUIRE_SIDECARS=1 TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/media-identifier-updater.key" \
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+  node ui/node_modules/@tauri-apps/cli/tauri.js build --target aarch64-apple-darwin
+```
+
+The bundles land in `target/aarch64-apple-darwin/release/bundle/`.

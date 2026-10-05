@@ -35,6 +35,7 @@ pub const COMMANDS: &[&str] = &[
     "undo_history",
     "check_for_update",
     "download_update",
+    "cancel_update_download",
     "install_update_and_relaunch",
     "skip_update_version",
 ];

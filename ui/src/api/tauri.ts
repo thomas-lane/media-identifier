@@ -56,6 +56,7 @@ export const tauriBackend: Backend = {
 
   checkForUpdate: () => invoke("check_for_update"),
   downloadUpdate: () => invoke("download_update"),
+  cancelUpdateDownload: () => invoke("cancel_update_download"),
   installUpdateAndRelaunch: () => invoke("install_update_and_relaunch"),
   skipUpdateVersion: (version) => invoke("skip_update_version", { version }),
 

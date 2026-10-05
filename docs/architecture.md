@@ -72,8 +72,8 @@ command is missing from the list or from the UI client. Every command returns
 |---|---|---|
 | `job-event` | `JobEvent` | a job progresses |
 | `model-download` | `ModelStatus` | a speech model download progresses |
-| `update-event` | `UpdateEvent` | an accepted update downloads |
-| `update-available` | `UpdateInfo` | the launch-time check finds a version the user has not skipped |
+| `update-event` | `UpdateEvent` | an accepted update downloads (about once per percent) |
+| `update-available` | `UpdateInfo` | a background check (at launch, then daily) finds a version the user has not skipped and was not offered in the last 24 hours |
 
 ## Shared types
 
@@ -109,16 +109,16 @@ cannot be built without (`crop`, `format`, `hflip`, `null`, `rotate`, `transpose
 
 | Purpose | Components |
 |---|---|
-| Containers | demuxers `matroska` (mkv), `mov` (mp4/m4v/mov), `avi`, `mpegps` (mpg/vob), `mpegts` (ts/m2ts/mts) |
-| Audio | decoders `ac3`, `ac3_fixed`, `eac3`, `aac`, `aac_fixed`, `aac_latm`, `mp1`, `mp1float`, `mp2`, `mp2float`, `mp3`, `mp3float`, `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, `alac`, every `pcm_*`; filters `aresample`, `aformat`, `anull`, `atrim`; encoder `pcm_f32le`; muxer `pcm_f32le` (the `f32le` output format) |
-| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `movtext`, `text`; encoder `srt`; muxer `srt` |
-| Stream parsing (for ffprobe) | parsers `aac`, `aac_latm`, `ac3`, `dca`, `flac`, `mlp`, `mpegaudio`, `opus`, `vorbis`, `mpegvideo`, `h264`, `hevc`, `vc1` |
+| Containers | demuxers `matroska`, `mov` (mp4/m4v/mov), `avi`, `mpegps` (VOB), `mpegts`, and `mpegvideo` (raw MPEG video, which the VOB demuxer uses to recognise DVD video streams) |
+| Audio | decoders `ac3`, `eac3`, `aac`, `aac_latm`, `mp1`, `mp2`, `mp3` (and their float variants), `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, `alac`, common `pcm_*` (including DVD and Blu-ray PCM); filters `aresample`, `aformat`, `anull`, `atrim`; encoders `pcm_f32le`, `pcm_s16le`; muxers `f32le`, `s16le`, `wav`, `null` |
+| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `text`; encoders `subrip`/`srt`; muxer `srt` |
+| Timestamps and stream details | parsers `aac`, `aac_latm`, `ac3`, `dca`, `flac`, `mlp`, `mpegaudio`, `opus`, `vorbis`, `h264`, `hevc`, `mpegvideo`, `vc1` |
 | I/O | protocols `file`, `pipe` |
 | Probing | ffprobe with JSON output |
 
 There are no video decoders: video is never decoded, and ffprobe reads picture sizes from the
-container or the parsers. The license notice and the exact configure lines are in
-`LICENSES/ffmpeg/NOTICE.md`.
+container or the parsers. The exact configure options, source version and checksum are in
+`third_party/ffmpeg/NOTICE.md`; `docs/development.md` ("ffmpeg sidecars") explains the build.
 
 `mi_media` runs every ffmpeg and ffprobe call through one helper (`crates/mi-media/src/run.rs`):
 stdin closed, no console window on Windows (`CREATE_NO_WINDOW`), stdout read on a helper
@@ -191,7 +191,8 @@ guess per model and processor and moves to the speed measured on the computer as
 | API keys | `<app config>/api-keys.json`, mode 0600 on macOS | `src-tauri` |
 | Speech models and the VAD model (and `.part` files of unfinished downloads) | `<app data>/models/` | `mi-transcribe` |
 | Provider cache | `<app data>/cache.sqlite` | `mi-sources` |
-| History journal | `<app data>/history.jsonl` | `mi-rename` |
+| History journal (JSON Lines: every rename, copy and folder recorded before and after it happens) | `<app data>/history.jsonl` | `mi-rename` |
+| Last update offered (version and time, for "Remind me later") | `<app config>/update-offer.json` | `src-tauri` (`updater.rs`) |
 | Saved job results | `<app data>/jobs/` | `mi-core` |
 
 `<app config>` and `<app data>` are Tauri's per-app folders for the identifier

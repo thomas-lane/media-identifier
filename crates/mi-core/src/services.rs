@@ -168,6 +168,13 @@ impl FfmpegMedia {
         }
     }
 
+    /// Uses these exact programs (tests and the command-line example).
+    pub fn from_sidecars(sidecars: Sidecars) -> Self {
+        let media = Self::new(SidecarLookup::default());
+        let _ = media.sidecars.set(sidecars);
+        media
+    }
+
     fn sidecars(&self) -> mi_media::Result<&Sidecars> {
         if let Some(s) = self.sidecars.get() {
             return Ok(s);
@@ -298,6 +305,86 @@ impl Catalog for OnlineCatalog {
     fn set_keys(&self, keys: ApiKeys) {
         self.sources.set_keys(keys);
     }
+}
+
+/// [`Catalog`] that works without a network: an episode list given in advance and reference
+/// texts from local subtitle or lyrics files ([`mi_sources::local::LocalReferences`]). Used by
+/// the end-to-end checks and the command-line example; the app uses [`OnlineCatalog`].
+#[derive(Debug)]
+pub struct LocalCatalog {
+    show: Show,
+    episodes: Vec<Episode>,
+    references: mi_sources::local::LocalReferences,
+}
+
+impl LocalCatalog {
+    /// A catalog of one show.
+    pub fn new(
+        show: Show,
+        episodes: Vec<Episode>,
+        references: mi_sources::local::LocalReferences,
+    ) -> Self {
+        Self {
+            show,
+            episodes,
+            references,
+        }
+    }
+}
+
+#[async_trait]
+impl Catalog for LocalCatalog {
+    async fn search_shows(&self, _query: &str) -> mi_sources::Result<Vec<ShowCandidate>> {
+        Ok(vec![ShowCandidate {
+            show: self.show.clone(),
+            score: 1.0,
+            guessed_from_folder: false,
+        }])
+    }
+
+    async fn episodes(
+        &self,
+        _show: &ShowRef,
+        ordering: EpisodeOrdering,
+    ) -> mi_sources::Result<Vec<Episode>> {
+        Ok(self
+            .episodes
+            .iter()
+            .filter(|e| e.ordering == ordering)
+            .cloned()
+            .collect())
+    }
+
+    async fn reference_texts(
+        &self,
+        show: &Show,
+        episodes: &[Episode],
+        language: &str,
+        on_progress: &(dyn Fn(u32, u32) + Send + Sync),
+        cancel: &CancelFlag,
+    ) -> mi_sources::Result<Vec<ReferenceText>> {
+        let total = episodes.len() as u32;
+        on_progress(0, total);
+        let ids = mi_sources::ShowIds::default();
+        let aired = std::collections::HashMap::new();
+        let request = mi_sources::ReferenceRequest {
+            show,
+            ids: &ids,
+            episodes,
+            aired: &aired,
+            language,
+            cancel,
+        };
+        let texts = self.references.reference_texts(&request).await?;
+        on_progress(total, total);
+        Ok(texts)
+    }
+
+    fn status(&self) -> Vec<SourceStatus> {
+        Vec::new()
+    }
+
+    fn set_keys(&self, _keys: ApiKeys) {}
 }
 
 /// [`SpeechEngine`] over whisper.cpp with the models in a [`ModelStore`] folder.

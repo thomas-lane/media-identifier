@@ -21,8 +21,8 @@ pub use jobs::{JobRecord, JobStore};
 pub use paths::DataPaths;
 pub use pipeline::{Outcome, PipelineConfig};
 pub use services::{
-    Catalog, FfmpegMedia, Listener, MediaBackend, OnlineCatalog, Services, SpeechEngine,
-    WhisperEngine,
+    Catalog, FfmpegMedia, Listener, LocalCatalog, MediaBackend, OnlineCatalog, Services,
+    SpeechEngine, WhisperEngine,
 };
 
 /// Result alias for this crate.

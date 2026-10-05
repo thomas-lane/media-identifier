@@ -182,7 +182,11 @@ pub async fn apply_rename(
     state: State<'_, AppState>,
     plan: RenamePlan,
 ) -> Result<RenameOutcome, ApiError> {
-    state.engine.apply_rename(plan).await.map_err(ApiError::from)
+    state
+        .engine
+        .apply_rename(plan)
+        .await
+        .map_err(ApiError::from)
 }
 
 /// History entries.

@@ -12,9 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use mi_core::{
-    Catalog, Engine, EventSink, Listener, MediaBackend, Services, SpeechEngine,
-};
+use mi_core::{Catalog, Engine, EventSink, Listener, MediaBackend, Services, SpeechEngine};
 use mi_sources::ApiKeys;
 use mi_transcribe::DecodeOptions;
 use mi_types::{
@@ -122,21 +120,18 @@ pub fn media_file(folder: &Path, name: &str, duration_s: f64, role: FileRole) ->
 
 /// A scan of `files` in `folder` with an optional play-all among them.
 pub fn scan(folder: &Path, files: Vec<MediaFile>) -> ScanSummary {
-    let play_all = files
-        .iter()
-        .find(|f| f.role == FileRole::PlayAll)
-        .map(|f| {
-            let probe = f.probe.as_ref().unwrap();
-            PlayAllInfo {
-                file_id: f.id.clone(),
-                duration_s: probe.duration_s,
-                chapter_count: probe.chapters.len() as u32,
-                candidates_total_s: 0.0,
-                chapters_matched: 0,
-                confidence: 1.0,
-                reason: "test".into(),
-            }
-        });
+    let play_all = files.iter().find(|f| f.role == FileRole::PlayAll).map(|f| {
+        let probe = f.probe.as_ref().unwrap();
+        PlayAllInfo {
+            file_id: f.id.clone(),
+            duration_s: probe.duration_s,
+            chapter_count: probe.chapters.len() as u32,
+            candidates_total_s: 0.0,
+            chapters_matched: 0,
+            confidence: 1.0,
+            reason: "test".into(),
+        }
+    });
     ScanSummary {
         folder: folder.to_path_buf(),
         candidate_count: files
@@ -152,13 +147,17 @@ pub fn scan(folder: &Path, files: Vec<MediaFile>) -> ScanSummary {
 
 /// Adds a text subtitle stream (index 2) to a file's probe.
 pub fn with_text_subtitles(mut file: MediaFile) -> MediaFile {
-    file.probe.as_mut().unwrap().subtitle_streams.push(SubtitleStream {
-        index: 2,
-        codec: "subrip".into(),
-        language: Some("eng".into()),
-        title: None,
-        is_text: true,
-    });
+    file.probe
+        .as_mut()
+        .unwrap()
+        .subtitle_streams
+        .push(SubtitleStream {
+            index: 2,
+            codec: "subrip".into(),
+            language: Some("eng".into()),
+            title: None,
+            is_text: true,
+        });
     file
 }
 
@@ -238,9 +237,12 @@ impl FakeMedia {
 
 impl MediaBackend for FakeMedia {
     fn scan(&self, folder: &Path, _cancel: &CancelFlag) -> mi_media::Result<ScanSummary> {
-        let mut s = self.summary.lock().unwrap().clone().ok_or_else(|| {
-            mi_media::MediaError::Io(std::io::Error::other("no such folder"))
-        })?;
+        let mut s = self
+            .summary
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| mi_media::MediaError::Io(std::io::Error::other("no such folder")))?;
         s.folder = folder.to_path_buf();
         Ok(s)
     }

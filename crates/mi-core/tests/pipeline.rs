@@ -23,7 +23,14 @@ fn key(n: u32) -> EpisodeKey {
 fn four_files(order: [usize; 4]) -> (FakeMedia, Script, std::path::PathBuf) {
     let folder = std::path::PathBuf::from("/disc");
     let files = (0..4)
-        .map(|i| media_file(&folder, &format!("title_t0{}.mkv", i + 1), 120.0, FileRole::Candidate))
+        .map(|i| {
+            media_file(
+                &folder,
+                &format!("title_t0{}.mkv", i + 1),
+                120.0,
+                FileRole::Candidate,
+            )
+        })
         .collect();
     let script: Script = (0..4)
         .map(|i| {
@@ -56,28 +63,60 @@ fn suggested(m: &mi_types::FileMatch) -> Option<EpisodeKey> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn identifies_every_file_and_reports_progress_in_order() {
     let (media, script, folder) = four_files([2, 0, 3, 1]);
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
-    assert!(matches!(h.recorder.wait_for_end(&job).await, JobEvent::Finished { .. }));
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Finished { .. }
+    ));
     let events = h.recorder.events();
 
-    assert!(matches!(&events[0], JobEvent::Started { file_ids, accelerator: mi_types::Accelerator::AppleGpu, .. } if file_ids.len() == 4));
+    assert!(
+        matches!(&events[0], JobEvent::Started { file_ids, accelerator: mi_types::Accelerator::AppleGpu, .. } if file_ids.len() == 4)
+    );
     let episodes_at = events
         .iter()
         .position(|e| matches!(e, JobEvent::Episodes { episodes, .. } if episodes.len() == 4))
         .expect("episodes event");
     let first_listen = events
         .iter()
-        .position(|e| matches!(e, JobEvent::File { status: FileStatus::Listening, .. }))
+        .position(|e| {
+            matches!(
+                e,
+                JobEvent::File {
+                    status: FileStatus::Listening,
+                    ..
+                }
+            )
+        })
         .unwrap();
-    assert!(episodes_at < first_listen, "the episode list comes before listening");
-    for stage in [Stage::EpisodeList, Stage::Subtitles, Stage::Listening, Stage::Matching] {
+    assert!(
+        episodes_at < first_listen,
+        "the episode list comes before listening"
+    );
+    for stage in [
+        Stage::EpisodeList,
+        Stage::Subtitles,
+        Stage::Listening,
+        Stage::Matching,
+    ] {
         assert!(
             events.iter().any(|e| matches!(e, JobEvent::Stage { stage: s, state: StageState::Done, .. } if *s == stage)),
             "{stage:?} finishes"
         );
     }
-    assert!(events.iter().any(|e| matches!(e, JobEvent::Stage { stage: Stage::DiscOrder, state: StageState::Skipped, .. })));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        JobEvent::Stage {
+            stage: Stage::DiscOrder,
+            state: StageState::Skipped,
+            ..
+        }
+    )));
     assert!(events.iter().any(|e| matches!(e, JobEvent::Eta { .. })));
 
     let matches = final_matches(&events);
@@ -98,7 +137,11 @@ async fn identifies_every_file_and_reports_progress_in_order() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_file_is_matched_as_soon_as_it_is_heard() {
     let (media, script, folder) = four_files([0, 1, 2, 3]);
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
     h.recorder.wait_for_end(&job).await;
     let events = h.recorder.events();
@@ -114,9 +157,11 @@ async fn each_file_is_matched_as_soon_as_it_is_heard() {
         first_matched < second_listening,
         "the first file can be reviewed before the second is heard"
     );
-    let done_with_best = events.iter().any(|e| matches!(e,
+    let done_with_best = events.iter().any(|e| {
+        matches!(e,
         JobEvent::File { file_id, status: FileStatus::Done, best_so_far: Some(t), .. }
-            if file_id.0 == "title_t01.mkv" && t == TITLES[0]));
+            if file_id.0 == "title_t01.mkv" && t == TITLES[0])
+    });
     assert!(done_with_best);
 }
 
@@ -127,7 +172,14 @@ async fn the_play_all_gives_the_disc_order_and_is_never_matched() {
     // play-all is the three in disc order, with a chapter at each start.
     let order = [1usize, 0, 2];
     let mut files: Vec<_> = (0..3)
-        .map(|i| media_file(&folder, &format!("title_t0{}.mkv", i + 1), 20.0, FileRole::Candidate))
+        .map(|i| {
+            media_file(
+                &folder,
+                &format!("title_t0{}.mkv", i + 1),
+                20.0,
+                FileRole::Candidate,
+            )
+        })
         .collect();
     let play_all = with_chapters(
         media_file(&folder, "title_t00.mkv", 60.0, FileRole::PlayAll),
@@ -139,22 +191,53 @@ async fn the_play_all_gives_the_disc_order_and_is_never_matched() {
     for i in 0..3 {
         let audio = noise(i as u64 + 7, 20.0);
         play_all_audio.extend_from_slice(&audio);
-        media.audio.insert(FileId(format!("title_t0{}.mkv", i + 1)), audio);
+        media
+            .audio
+            .insert(FileId(format!("title_t0{}.mkv", i + 1)), audio);
     }
-    media.audio.insert(FileId("title_t00.mkv".into()), play_all_audio);
+    media
+        .audio
+        .insert(FileId("title_t00.mkv".into()), play_all_audio);
     let script: Script = (0..3)
-        .map(|i| (FileId(format!("title_t0{}.mkv", i + 1)), story_lines(order[i], 1.0)))
+        .map(|i| {
+            (
+                FileId(format!("title_t0{}.mkv", i + 1)),
+                story_lines(order[i], 1.0),
+            )
+        })
         .collect();
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
-    assert!(matches!(h.recorder.wait_for_end(&job).await, JobEvent::Finished { .. }));
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Finished { .. }
+    ));
     let events = h.recorder.events();
 
-    assert!(matches!(&events[0], JobEvent::Started { file_ids, .. } if file_ids.len() == 4 && file_ids[3].0 == "title_t00.mkv"));
-    assert!(events.iter().any(|e| matches!(e, JobEvent::Stage { stage: Stage::DiscOrder, state: StageState::Done, .. })));
+    assert!(
+        matches!(&events[0], JobEvent::Started { file_ids, .. } if file_ids.len() == 4 && file_ids[3].0 == "title_t00.mkv")
+    );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        JobEvent::Stage {
+            stage: Stage::DiscOrder,
+            state: StageState::Done,
+            ..
+        }
+    )));
     let matches = final_matches(&events);
-    assert_eq!(matches[&FileId("title_t00.mkv".into())].confidence.verdict, Verdict::PlayAll);
-    assert_eq!(matches[&FileId("title_t00.mkv".into())].suggestion, Suggestion::PlayAll);
+    assert_eq!(
+        matches[&FileId("title_t00.mkv".into())].confidence.verdict,
+        Verdict::PlayAll
+    );
+    assert_eq!(
+        matches[&FileId("title_t00.mkv".into())].suggestion,
+        Suggestion::PlayAll
+    );
     for i in 0..3 {
         let m = &matches[&FileId(format!("title_t0{}.mkv", i + 1))];
         assert_eq!(suggested(m), Some(key(order[i] as u32 + 1)));
@@ -165,7 +248,10 @@ async fn the_play_all_gives_the_disc_order_and_is_never_matched() {
             .expect("located in the play-all");
         assert_eq!(position.order_index, i as u32);
         assert_eq!(position.chapter, Some(i as u32));
-        assert!((position.start_s - 20.0 * i as f64).abs() < 0.5, "{position:?}");
+        assert!(
+            (position.start_s - 20.0 * i as f64).abs() < 0.5,
+            "{position:?}"
+        );
     }
     // The play-all itself is only fingerprinted, never transcribed.
     assert!(h.media.decoded_windows("title_t00.mkv").is_empty());
@@ -179,7 +265,8 @@ async fn uncertain_long_files_are_listened_to_further() {
     // The four sampled windows (around 180, 480, 780 and 1020 s) hear only the harbour's
     // greeting, which every episode shares; the story is told at 300-330 s, between the first
     // two windows.
-    let shared = "Welcome back to the harbour where the gulls are singing and the boats are bobbing";
+    let shared =
+        "Welcome back to the harbour where the gulls are singing and the boats are bobbing";
     let mut catalog = FakeCatalog::with_subtitles();
     if let Ok(texts) = catalog.texts.as_mut() {
         for t in texts {
@@ -197,8 +284,15 @@ async fn uncertain_long_files_are_listened_to_further() {
     h.recorder.wait_for_end(&job).await;
 
     let windows = h.media.decoded_windows("title_t01.mkv");
-    assert!(windows.len() > 4, "more windows were transcribed: {windows:?}");
-    assert!(windows.iter().any(|w| w.start_s <= 300.0 && w.end_s >= 320.0));
+    assert!(
+        windows.len() > 4,
+        "more windows were transcribed: {windows:?}"
+    );
+    assert!(
+        windows
+            .iter()
+            .any(|w| w.start_s <= 300.0 && w.end_s >= 320.0)
+    );
     let m = &final_matches(&h.recorder.events())[&FileId("title_t01.mkv".into())];
     assert_eq!(suggested(m), Some(key(2)));
     assert_eq!(m.confidence.verdict, Verdict::Confident);
@@ -214,7 +308,12 @@ async fn long_files_are_heard_whole_when_sampling_is_off() {
         sample_long_files: false,
         ..Settings::default()
     };
-    let h = harness_with(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script), settings);
+    let h = harness_with(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+        settings,
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
     h.recorder.wait_for_end(&job).await;
     let windows = h.media.decoded_windows("title_t01.mkv");
@@ -225,15 +324,31 @@ async fn long_files_are_heard_whole_when_sampling_is_off() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn embedded_text_subtitles_identify_a_file_with_nothing_heard() {
     let folder = std::path::PathBuf::from("/disc");
-    let file = with_text_subtitles(media_file(&folder, "title_t01.mkv", 120.0, FileRole::Candidate));
+    let file = with_text_subtitles(media_file(
+        &folder,
+        "title_t01.mkv",
+        120.0,
+        FileRole::Candidate,
+    ));
     let mut media = FakeMedia::new(scan(&folder, vec![file]));
     let srt: String = STORIES[3]
         .split(". ")
         .enumerate()
-        .map(|(i, line)| format!("{}\n00:00:{:02},000 --> 00:00:{:02},500\n{line}\n\n", i + 1, i * 3, i * 3 + 2))
+        .map(|(i, line)| {
+            format!(
+                "{}\n00:00:{:02},000 --> 00:00:{:02},500\n{line}\n\n",
+                i + 1,
+                i * 3,
+                i * 3 + 2
+            )
+        })
         .collect();
     media.subtitles.insert(FileId("title_t01.mkv".into()), srt);
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(Script::new()));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(Script::new()),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
     h.recorder.wait_for_end(&job).await;
     let m = &final_matches(&h.recorder.events())[&FileId("title_t01.mkv".into())];
@@ -244,16 +359,29 @@ async fn embedded_text_subtitles_identify_a_file_with_nothing_heard() {
 async fn a_file_that_cannot_be_decoded_fails_alone() {
     let (mut media, script, folder) = four_files([0, 1, 2, 3]);
     media.broken.insert(FileId("title_t02.mkv".into()));
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
-    assert!(matches!(h.recorder.wait_for_end(&job).await, JobEvent::Finished { .. }));
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Finished { .. }
+    ));
     let events = h.recorder.events();
     assert!(events.iter().any(|e| matches!(e,
         JobEvent::File { file_id, status: FileStatus::Failed, .. } if file_id.0 == "title_t02.mkv")));
     let matches = final_matches(&events);
-    assert_ne!(matches[&FileId("title_t02.mkv".into())].confidence.verdict, Verdict::Confident);
+    assert_ne!(
+        matches[&FileId("title_t02.mkv".into())].confidence.verdict,
+        Verdict::Confident
+    );
     for (i, n) in [(1, 1), (3, 3), (4, 4)] {
-        assert_eq!(suggested(&matches[&FileId(format!("title_t0{i}.mkv"))]), Some(key(n)));
+        assert_eq!(
+            suggested(&matches[&FileId(format!("title_t0{i}.mkv"))]),
+            Some(key(n))
+        );
     }
 }
 
@@ -273,10 +401,19 @@ async fn without_reference_text_the_job_continues_with_titles_and_summaries() {
     };
     let h = harness(media, catalog, FakeSpeech::new(script));
     let job = h.engine.start_job(request(&folder)).unwrap();
-    assert!(matches!(h.recorder.wait_for_end(&job).await, JobEvent::Finished { .. }));
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Finished { .. }
+    ));
     let events = h.recorder.events();
-    assert!(events.iter().any(|e| matches!(e,
-        JobEvent::Stage { stage: Stage::Subtitles, state: StageState::Failed { .. }, .. })));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        JobEvent::Stage {
+            stage: Stage::Subtitles,
+            state: StageState::Failed { .. },
+            ..
+        }
+    )));
     let matches = final_matches(&events);
     for i in 0..4 {
         assert_eq!(
@@ -299,9 +436,18 @@ async fn a_missing_episode_list_fails_the_job_with_a_reason() {
     let JobEvent::Failed { message, .. } = end else {
         panic!("expected Failed, got {end:?}")
     };
-    assert!(message.starts_with("Couldn't get the episode list"), "{message}");
-    assert!(h.recorder.events().iter().any(|e| matches!(e,
-        JobEvent::Stage { stage: Stage::EpisodeList, state: StageState::Failed { .. }, .. })));
+    assert!(
+        message.starts_with("Couldn't get the episode list"),
+        "{message}"
+    );
+    assert!(h.recorder.events().iter().any(|e| matches!(
+        e,
+        JobEvent::Stage {
+            stage: Stage::EpisodeList,
+            state: StageState::Failed { .. },
+            ..
+        }
+    )));
     assert!(!h.engine.is_job_running());
 }
 
@@ -313,8 +459,15 @@ async fn a_missing_speech_model_fails_the_job_before_it_starts() {
     let h = harness(media, FakeCatalog::with_subtitles(), speech);
     let job = h.engine.start_job(request(&folder)).unwrap();
     let end = h.recorder.wait_for_end(&job).await;
-    assert!(matches!(&end, JobEvent::Failed { message, .. } if message.contains("speech model is not downloaded")));
-    assert!(!h.recorder.events().iter().any(|e| matches!(e, JobEvent::Started { .. })));
+    assert!(
+        matches!(&end, JobEvent::Failed { message, .. } if message.contains("speech model is not downloaded"))
+    );
+    assert!(
+        !h.recorder
+            .events()
+            .iter()
+            .any(|e| matches!(e, JobEvent::Started { .. }))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -323,7 +476,10 @@ async fn seasons_limit_the_candidate_episodes() {
     let mut catalog = FakeCatalog::with_subtitles();
     let mut list = episodes();
     let mut special = episode(0);
-    special.key = EpisodeKey { season: 0, number: 1 };
+    special.key = EpisodeKey {
+        season: 0,
+        number: 1,
+    };
     special.provider_episode_id = "special".into();
     list.insert(0, special);
     catalog.episodes = Ok(list);
@@ -351,26 +507,48 @@ async fn cancelling_stops_the_job_and_frees_the_engine() {
     ));
     // Wait until it is listening, then cancel.
     for _ in 0..500 {
-        if h.recorder.events().iter().any(|e| matches!(e, JobEvent::File { status: FileStatus::Listening, .. })) {
+        if h.recorder.events().iter().any(|e| {
+            matches!(
+                e,
+                JobEvent::File {
+                    status: FileStatus::Listening,
+                    ..
+                }
+            )
+        }) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     let started = std::time::Instant::now();
     h.engine.cancel_job(&job).unwrap();
-    assert!(matches!(h.recorder.wait_for_end(&job).await, JobEvent::Cancelled { .. }));
-    assert!(started.elapsed() < Duration::from_secs(4), "cancelled within one window");
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Cancelled { .. }
+    ));
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "cancelled within one window"
+    );
     assert!(!h.engine.is_job_running());
     assert!(!h.engine.job_results(&job).unwrap().complete);
     // Cancelling again, or a finished job, is harmless; an unknown job is not found.
     h.engine.cancel_job(&job).unwrap();
-    assert!(h.engine.cancel_job(&mi_types::JobId("job-unknown".into())).is_err());
+    assert!(
+        h.engine
+            .cancel_job(&mi_types::JobId("job-unknown".into()))
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn finished_jobs_are_saved_and_listed_newest_first() {
     let (media, script, folder) = four_files([0, 1, 2, 3]);
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script.clone()));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script.clone()),
+    );
     let first = h.engine.start_job(request(&folder)).unwrap();
     h.recorder.wait_for_end(&first).await;
     tokio::time::sleep(Duration::from_millis(5)).await;
@@ -401,7 +579,10 @@ async fn finished_jobs_are_saved_and_listed_newest_first() {
         std::sync::Arc::new(Recorder::default()),
     );
     assert_eq!(reopened.recent_jobs().unwrap().len(), 2);
-    assert_eq!(reopened.job_results(&first).unwrap(), h.engine.job_results(&first).unwrap());
+    assert_eq!(
+        reopened.job_results(&first).unwrap(),
+        h.engine.job_results(&first).unwrap()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -417,9 +598,18 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
     }
     let media = FakeMedia::new(scan(&folder, files));
     let script: Script = (0..3)
-        .map(|i| (FileId(format!("title_t0{}.mkv", i + 1)), story_lines(2 - i, 10.0)))
+        .map(|i| {
+            (
+                FileId(format!("title_t0{}.mkv", i + 1)),
+                story_lines(2 - i, 10.0),
+            )
+        })
         .collect();
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let job = h.engine.start_job(request(&folder)).unwrap();
     h.recorder.wait_for_end(&job).await;
 
@@ -467,7 +657,10 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
         .join("Harbour Tales (1999) - S01E03 - The Storm at Midnight.mkv");
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "video 1");
     let heard = std::fs::read_to_string(target.with_extension("srt")).unwrap();
-    assert!(heard.contains("Thunder rolled across the harbour"), "{heard}");
+    assert!(
+        heard.contains("Thunder rolled across the harbour"),
+        "{heard}"
+    );
     assert!(folder.join("title_t03.mkv").exists(), "skipped files stay");
     assert!(h.engine.recent_jobs().unwrap()[0].saved);
 
@@ -476,18 +669,30 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
     assert_eq!(history[0].show_name, "Harbour Tales");
     let undone = h.engine.undo(&history[0].id).await.unwrap();
     assert!(undone.failed.is_empty(), "{undone:?}");
-    assert_eq!(std::fs::read_to_string(folder.join("title_t01.mkv")).unwrap(), "video 1");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("title_t01.mkv")).unwrap(),
+        "video 1"
+    );
     assert!(!target.exists());
 
     // Once undone, a second plan sees no conflicts with the old targets.
     let again = h.engine.plan_rename(&request).unwrap();
-    assert!(!again.conflicts.iter().any(|c| matches!(c, PlanConflict::TargetExists { .. })));
+    assert!(
+        !again
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, PlanConflict::TargetExists { .. }))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn searching_the_folder_guess_marks_the_results() {
     let (media, script, folder) = four_files([0, 1, 2, 3]);
-    let h = harness(media, FakeCatalog::with_subtitles(), FakeSpeech::new(script));
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(script),
+    );
     let scanned = h.engine.scan(&folder).await.unwrap();
     assert_eq!(scanned.show_guess.as_deref(), Some("Harbour Tales"));
     assert!(h.engine.search_shows("harbour tales").await.unwrap()[0].guessed_from_folder);

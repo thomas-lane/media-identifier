@@ -344,7 +344,10 @@ impl Engine {
                     .iter()
                     .any(|f| f.id == item.file_id && f.path == item.from);
                 let targets_ok = is_plain_absolute(&item.to)
-                    && item.heard_subtitles_to.as_deref().is_none_or(is_plain_absolute);
+                    && item
+                        .heard_subtitles_to
+                        .as_deref()
+                        .is_none_or(is_plain_absolute);
                 if !known || !targets_ok {
                     return Err(CoreError::Invalid(
                         "The rename preview no longer matches the identified files. Open the preview again."

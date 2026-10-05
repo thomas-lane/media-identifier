@@ -323,7 +323,10 @@ impl<'a> Job<'a> {
         }
 
         // 2. Episode list.
-        self.stage(Stage::EpisodeList, StageState::Running { done: 0, total: 1 });
+        self.stage(
+            Stage::EpisodeList,
+            StageState::Running { done: 0, total: 1 },
+        );
         let episodes = self.episode_list().await.inspect_err(|e| {
             if !is_cancelled(e) {
                 self.stage(
@@ -344,10 +347,7 @@ impl<'a> Job<'a> {
         // 3. Reference text.
         let texts = self.reference_texts(&episodes).await?;
         let lyric_count = texts.iter().filter(|t| t.kind == TextKind::Lyrics).count();
-        let dialogue_count = texts
-            .iter()
-            .filter(|t| t.kind != TextKind::Summary)
-            .count();
+        let dialogue_count = texts.iter().filter(|t| t.kind != TextKind::Summary).count();
         // A show whose reference texts are mostly lyrics is sung: voice activity detection would
         // cut sung words, and music is expected rather than a sign of a bonus feature.
         let show_is_musical = dialogue_count > 0 && lyric_count * 2 >= dialogue_count;

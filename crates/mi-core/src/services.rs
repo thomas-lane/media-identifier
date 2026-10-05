@@ -176,7 +176,11 @@ impl FfmpegMedia {
         Ok(self.sidecars.get_or_init(|| resolved))
     }
 
-    fn extract_options(file: &MediaFile, window: Option<SampleWindow>, language: &str) -> ExtractOptions {
+    fn extract_options(
+        file: &MediaFile,
+        window: Option<SampleWindow>,
+        language: &str,
+    ) -> ExtractOptions {
         let stream_index = file
             .probe
             .as_ref()
@@ -213,9 +217,13 @@ impl MediaBackend for FfmpegMedia {
         on_chunk: &mut dyn FnMut(&[f32]) -> bool,
     ) -> mi_media::Result<()> {
         let options = Self::extract_options(file, None, language);
-        mi_media::stream_audio(self.sidecars()?, &file.path, &options, cancel, &mut |chunk| {
-            on_chunk(chunk.samples)
-        })
+        mi_media::stream_audio(
+            self.sidecars()?,
+            &file.path,
+            &options,
+            cancel,
+            &mut |chunk| on_chunk(chunk.samples),
+        )
     }
 
     fn text_subtitles(

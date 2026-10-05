@@ -92,12 +92,7 @@ impl JobStore {
 
     /// A job of this session, or one saved earlier.
     pub fn get(&self, id: &JobId) -> Option<SharedRecord> {
-        if let Some(r) = self
-            .live
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(id)
-        {
+        if let Some(r) = self.live.lock().unwrap_or_else(|p| p.into_inner()).get(id) {
             return Some(Arc::clone(r));
         }
         let record = read_record(&self.path_of(id)?)?;
@@ -134,12 +129,7 @@ impl JobStore {
                 }
             }
         }
-        for record in self
-            .live
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .values()
-        {
+        for record in self.live.lock().unwrap_or_else(|p| p.into_inner()).values() {
             let record = record.lock().unwrap_or_else(|p| p.into_inner());
             if record.finished_at_ms.is_some() {
                 by_id.insert(record.results.job_id.clone(), record.recent());

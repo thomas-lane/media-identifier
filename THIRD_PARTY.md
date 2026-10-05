@@ -12,6 +12,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | tokio | MIT | async runtime |
 | tracing, tracing-subscriber | MIT | logging |
 | tempfile (tests) | MIT OR Apache-2.0 | temporary folders in tests |
+| async-trait (`mi-core`) | MIT OR Apache-2.0 | the `Catalog` service trait |
 | Tauri, tauri-build, tauri-plugin-updater, tauri-plugin-dialog, tauri-plugin-opener | Apache-2.0 OR MIT | desktop shell, updates, dialogs, opening links |
 | React, React DOM | MIT | UI |
 | @tauri-apps/api, @tauri-apps/plugin-dialog, @tauri-apps/plugin-opener | Apache-2.0 OR MIT | UI access to Tauri |

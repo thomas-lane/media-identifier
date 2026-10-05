@@ -19,6 +19,43 @@ and `cargo test --workspace`. A third job on Linux lints the workflow files with
 [actionlint](https://github.com/rhysd/actionlint) and runs `scripts/build-ffmpeg.sh --check-notice`.
 Run `actionlint` locally (`brew install actionlint`) after editing a workflow.
 
+## End-to-end checks
+
+Two checks run the whole pipeline with real ffmpeg and real speech models. They are not part of
+`cargo test --workspace`, because they need macOS, model files and (for the second) real episodes.
+
+**Synthetic disc.** `scripts/make-synthetic-disc.sh <folder>` writes a fictional eight-episode
+show spoken by macOS's `say` (each episode opens with the same instrumental theme; two have a tone
+and one a chord under the speech), the separate titles numbered in a shuffled order, a play-all
+with one chapter per episode, a bonus clip, reference subtitles of which three are paraphrased,
+the episode list as JSON and `truth.json` with the right answers. It needs a full ffmpeg
+(Homebrew's), because the sidecars have no encoders. The ignored test runs the script and
+identifies the result with the Fast model, failing unless every file is right:
+
+```bash
+MI_TEST_MODEL_DIR=<folder with ggml-small.en-q5_1.bin and ggml-silero-v5.1.2.bin> \
+  cargo test -p mi-core --test synthetic_disc -- --ignored --nocapture
+```
+
+`MI_TEST_MODEL_DIR` is the folder the `mi-transcribe` real-model tests download into
+(`target/tmp/models` by default); `MI_SYNTHETIC_DIR` reuses a disc made earlier.
+
+**Real files.** `crates/mi-core/examples/identify.rs` identifies any folder with the app's engine
+and prints each file's suggestion, verdict, score and margin, and with `--truth` whether it is
+right:
+
+```bash
+cargo run --release -p mi-core --example identify -- <folder> --tvmaze <TVmaze show id> \
+  --season 1 --references <folder of .srt files> --model fast --models <model folder> \
+  --truth <truth.json>
+```
+
+`--show <show.json> --episodes <episodes.json>` replaces TVmaze with an episode list in
+`mi-types` JSON (as the synthetic disc writes it). `--references` reads subtitle files named with
+an `S01E02`-style marker as reference text before any online source. Copy real episodes to a
+scratch folder first and give them neutral names (`title_t00.mp4`, ...), so nothing in a file name
+gives the answer away; the example only reads the files.
+
 ## Generated TypeScript types
 
 `ui/src/types/generated/` is generated from `crates/mi-types`. After changing a shared type, run
@@ -47,6 +84,13 @@ instruction on computers without it. With `GGML_NATIVE=OFF`, x64 builds target S
 AVX2, BMI2, FMA and F16C (Intel since 2013, AMD since 2015) and leave AVX-512 off; Apple clang
 targets the Apple M1 instruction set, which every Apple Silicon Mac supports. Set it in the
 environment of every release build.
+
+**macOS release builds link `libclang_rt.osx.a`.** whisper.cpp's Metal code checks the macOS
+version at run time. Built for an older macOS than the SDK (release builds target macOS 11), clang
+turns each check into a call to `__isPlatformVersionAtLeast`, which lives in clang's runtime
+library; rustc links with `-nodefaultlibs`, so `crates/mi-transcribe/build.rs` adds that library
+(found with `xcrun clang --print-runtime-dir`). Debug builds target the running macOS and make no
+such calls.
 
 **Windows.** The build needs the Visual Studio C++ build tools and CMake (both installed on
 GitHub's `windows-latest` image). The speech model runs on the CPU.
@@ -230,9 +274,12 @@ because `createUpdaterArtifacts` is on):
 
 ```bash
 scripts/build-ffmpeg.sh
-MI_REQUIRE_SIDECARS=1 TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/media-identifier-updater.key" \
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+CI=true GGML_NATIVE=OFF MI_REQUIRE_SIDECARS=1 \
+  TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/media-identifier-updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
   node ui/node_modules/@tauri-apps/cli/tauri.js build --target aarch64-apple-darwin
 ```
+
+`CI=true` makes the `.dmg` step skip arranging its Finder window, which otherwise waits for a
+Finder automation permission prompt; GitHub Actions sets it by itself.
 
 The bundles land in `target/aarch64-apple-darwin/release/bundle/`.

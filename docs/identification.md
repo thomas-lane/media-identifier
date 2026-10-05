@@ -511,8 +511,16 @@ for the Review screen's dropdown.
 
 When only sample windows of a long file were transcribed and the result is uncertain, hearing more
 can settle it. `mi_match::needs_more_listening` lists every Check file and every Extra whose best
-episode came within the confident margin of the "no episode" level; the job transcribes more of
-those files and matches again.
+episode came within the confident margin of the "no episode" level. The job
+(`mi_core::pipeline`) then listens further in at most two rounds (`PipelineConfig::max_escalations`):
+the first adds one window in each gap between the windows already heard, the second transcribes
+the rest of the file. After each round every file is matched again, so the global assignment sees
+the new text; a round that adds nothing ends the escalation. Files transcribed whole, and files
+whose audio could not be decoded, are not listened to again.
+
+A file counts as *mostly music* (which raises the title hook's weight and turns voice activity
+detection off) when the show's reference texts are mostly lyrics, or when more than half of the
+file's recognised segments are music notes or were rated as non-speech.
 
 ### Settings
 

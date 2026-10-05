@@ -27,39 +27,75 @@ free of I/O so it can be tested with plain data.
 
 ## A job, end to end
 
+The Start and Confirm show screens call `Engine::scan` and `Engine::search_shows`; "Identify"
+calls `Engine::start_job`, which runs `mi_core::pipeline::run` on the runtime. The pipeline:
+
 1. **Scan** (`mi_media::scan_folder`): list video files, probe each with ffprobe, mark the play-all
    title (duration close to the sum of the others, chapters matching their lengths), guess the
    show from the folder name, and warn when the play-all has more chapters than short files were
-   found or when the folder holds a DVD or Blu-ray folder structure instead of ripped titles.
-2. **Confirm show** (`mi_sources::Sources::search_shows`): the user picks the show.
-3. **Episode list** (`Sources::episodes`): TVmaze, or TMDb numbering with a user key.
-4. **Reference text** (`Sources::reference_texts`, `mi_media::extract_text_subtitles`): subtitles,
-   lyrics, embedded text streams, summaries; all cached. Extra local sources (for example
-   `mi_sources::local::LocalReferences`) are added with `Sources::add_reference_provider`.
+   found or when the folder holds a DVD or Blu-ray folder structure instead of ripped titles. The
+   job reuses the scan the Confirm show screen made of the same folder.
+2. **Speech model** (`mi_transcribe::WhisperTranscriber::load`): loaded once per job, before
+   `Started`, so a missing model fails the job at once with a message pointing to the download.
+3. **Episode list** (`Sources::episodes`): TVmaze, or TMDb numbering with a user key, limited to
+   the seasons chosen on Confirm show. Without an episode list the job fails.
+4. **Reference text** (`Sources::reference_texts`): local files, subtitles, lyrics, summaries; all
+   cached. When this stage fails the job continues, because titles and summaries still identify
+   files.
 5. **Disc order** (`mi_media::stream_audio`, `mi_match::align`): fingerprint each file and the
    play-all (`FingerprintBuilder` takes the audio in chunks), locate each file inside the
-   play-all, and decide whether that order is trustworthy.
-6. **Listening** (`mi_transcribe`): choose windows, decode them to 16 kHz mono PCM, transcribe,
-   filter invented text.
-7. **Matching** (`mi_match::match_files`): score every file against every episode, choose the best
-   overall assignment, classify each file as Confident, Check or Extra. Files with a low margin
-   (`mi_match::needs_more_listening`) get more windows transcribed and are matched again.
-8. **Review and save** (`mi_rename`): the user approves; files are renamed in place (journaled for
-   undo), copied, or exported as CSV.
+   play-all, and decide whether that order is trustworthy. Skipped without a play-all or with
+   fewer than two files.
+6. **Listening** (`mi_transcribe`), file by file: read the file's embedded text subtitle stream
+   when it has one (`mi_media::extract_text_subtitles`), choose windows, decode them to 16 kHz mono
+   PCM, transcribe, filter invented text. Each file is then matched on its own and its result sent
+   (`Matched`), so Review can start before the other files are heard.
+7. **Matching** (`mi_match::match_with_outcome`): score every file against every episode, choose
+   the best overall assignment, classify each file as Confident, Check or Extra. Files with a low
+   margin (`mi_match::needs_more_listening`) get more windows transcribed, then the rest of the
+   file, and everything is matched again. Every file's final result is sent, then `Finished`.
+8. **Review and save** (`Engine::plan_rename`, `Engine::apply_rename`, `mi_rename`): the user
+   approves; files are renamed in place (journaled for undo), copied, or exported as CSV.
 
 `docs/identification.md` explains steps 5-7.
 
+## The engine and its services
+
+`mi_core::Engine` reaches the outside world through three traits in
+`crates/mi-core/src/services.rs`, so a whole job can run in a test without ffmpeg, a network or a
+model:
+
+| Trait | In the app | Elsewhere |
+|---|---|---|
+| `MediaBackend` (scan, decode a window, stream a file, read a subtitle stream) | `FfmpegMedia`, over the sidecars | scripted files in `crates/mi-core/tests/common` |
+| `Catalog` (show search, episode list, reference text, source status, keys) | `OnlineCatalog`, over `mi_sources::Sources` | `LocalCatalog` (an episode list given in advance plus local subtitle files) in the end-to-end checks; a scripted catalog in tests |
+| `SpeechEngine` and `Listener` (load a model, transcribe a window of a file) | `WhisperEngine`, over `WhisperTranscriber` | a scripted listener in tests |
+
+`Listener` differs from `mi_transcribe::Transcriber` only in being told which file the audio
+belongs to, so tests can script a transcript per file; every `Transcriber` is a `Listener`.
+
+Each job's results live in a `JobRecord` (`crates/mi-core/src/jobs.rs`): the `JobResults` the UI
+shows, the scanned files and what was heard in each file. The record is filled as the job runs,
+so `job_results` returns partial results during a job, and written to
+`<app data>/jobs/<job id>.json` when the job ends, so Recent and Review work after a relaunch.
+Rename plans are built from the record, not from the window: `apply_rename` refuses a plan whose
+items are not the job's files at their scanned paths, or whose targets are not plain absolute
+paths. `crates/mi-core/examples/identify.rs` runs the same engine from the command line.
+
 ## Threads, cancellation and progress
 
-`mi_core::Engine` runs at most one job. Network calls are async on Tokio. ffmpeg and whisper.cpp
-calls block, so they run on Tokio's blocking pool. Every long-running function takes a
-`mi_types::CancelFlag` (a shared atomic flag) and checks it between units of work; ffmpeg child
-processes are killed and whisper.cpp stops through its abort callback. A plain flag is used
-because whisper.cpp runs on threads that cannot await an async token.
+`mi_core::Engine` runs at most one job. Network calls are async on Tokio (Tauri's own runtime in
+the app, passed in as `EngineConfig::runtime`). ffmpeg, whisper.cpp and matching block, so they
+run on Tokio's blocking pool. Every long-running function takes a `mi_types::CancelFlag` (a
+shared atomic flag) and checks it between units of work; ffmpeg child processes are killed and
+whisper.cpp stops through its abort callback. A plain flag is used because whisper.cpp runs on
+threads that cannot await an async token.
 
 Progress reaches the UI as `JobEvent`s: `mi_core::EventSink` is implemented by
 `src-tauri/src/sink.rs`, which emits Tauri events. The last event of a job is always `Finished`,
-`Failed` or `Cancelled`.
+`Failed` or `Cancelled`. The engine sends it only after the job's record is saved and the job no
+longer counts as running, so a window that reacts to it can read the results and start another
+job at once.
 
 ## Commands and events
 
@@ -136,6 +172,8 @@ episode". Pending files are left untouched by the plan, as are the play-all and 
 
 The update flow asks before downloading and never interrupts identification: an update announced
 while a job runs is shown when the job ends, and "Relaunch now" is disabled while a job runs.
+While an update downloads, "Hide" closes the dialog and lets the download finish, and "Cancel"
+stops it (`cancel_update_download`).
 Dialog buttons follow the platform: the default button is last on macOS and first on Windows
 (`lib/platform.ts`, from the web view's user agent). Light and dark follow the system through
 `prefers-color-scheme`; colors are tokens on `:root` in `ui/src/styles.css`.
@@ -247,7 +285,7 @@ guess per model and processor and moves to the speed measured on the computer as
 | Provider cache | `<app data>/cache.sqlite` | `mi-sources` |
 | History journal (JSON Lines: every rename, copy and folder recorded before and after it happens) | `<app data>/history.jsonl` | `mi-rename` |
 | Last update offered (version and time, for "Remind me later") | `<app config>/update-offer.json` | `src-tauri` (`updater.rs`) |
-| Saved job results | `<app data>/jobs/` | `mi-core` |
+| Saved jobs (one JSON file per job: results, scanned files, what was heard) | `<app data>/jobs/` | `mi-core` (`jobs.rs`) |
 
 `<app config>` and `<app data>` are Tauri's per-app folders for the identifier
 `com.thomaslane.mediaidentifier` (`~/Library/Application Support/com.thomaslane.mediaidentifier`

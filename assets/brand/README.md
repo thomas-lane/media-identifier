@@ -175,3 +175,10 @@ header spelled the name correctly, but its icon differs from the app icon (it ad
 and it has no dark version, so `src/header.svg` composes the real icon with outlined Inter text.
 The identification figure was drawn by hand from the start, because it has to show the
 matching steps exactly.
+
+## Install figures
+
+`docs/images/install-*.svg` are simplified drawings of the macOS and Windows first-launch
+dialogs, marking where to click, for `docs/install.md`. They are drawn by
+`tools/install_figures.py` (plain Python, no dependencies); run
+`python3 assets/brand/tools/install_figures.py` from the repository root after editing it.

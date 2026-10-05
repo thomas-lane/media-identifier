@@ -16,10 +16,10 @@ ui/dist/
 .env.*
 
 # Local models, caches and scratch data
-models/
+/models/
 *.bin
 *.part
-cache/
+/cache/
 *.sqlite
 *.sqlite3
 *.db

@@ -13,6 +13,10 @@ where they are.
 
 **Job**: one identification run over one folder for one confirmed show.
 
+**Job record**: everything kept about one job: its results, the scanned files and what was heard
+in each file. It is filled while the job runs and saved to `<app data>/jobs/` when the job ends,
+so Recent and Review work after the app restarts.
+
 **Sidecar**: a helper executable shipped next to the app (ffmpeg and ffprobe).
 
 ## Scanning

@@ -14,23 +14,26 @@ The builds are not code-signed: signing requires paid certificates from Apple an
 Windows certificate authority, which this project does not use. Each system therefore asks you
 to confirm, once, that you want to open an app from an unidentified developer.
 
+The pictures below are simplified drawings that mark where to click; the exact wording of the
+dialogs depends on the version of macOS or Windows.
+
 ## macOS
 
 1. Open the `.dmg` and drag **Media Identifier** onto **Applications**.
 2. Open Media Identifier from Applications. macOS says it was not opened because Apple could not
    verify it. Click **Done**.
 
-   ![macOS dialog saying Media Identifier was not opened](images/install-macos-not-opened.png)
+   ![macOS dialog saying Media Identifier was not opened](images/install-macos-not-opened.svg)
 
 3. Open **System Settings > Privacy & Security** and scroll down to **Security**. Next to
    "Media Identifier was blocked to protect your Mac", click **Open Anyway**, and confirm with your
    password or Touch ID.
 
-   ![Privacy & Security with the Open Anyway button](images/install-macos-open-anyway.png)
+   ![Privacy & Security with the Open Anyway button](images/install-macos-open-anyway.svg)
 
 4. In the dialog that follows, click **Open Anyway** again.
 
-   ![macOS dialog with the Open Anyway button](images/install-macos-confirm.png)
+   ![macOS dialog with the Open Anyway button](images/install-macos-confirm.svg)
 
 From then on Media Identifier opens like any other app.
 
@@ -46,11 +49,11 @@ xattr -dr com.apple.quarantine "/Applications/Media Identifier.app"
 1. Run `Media Identifier_<version>_x64-setup.exe`.
 2. Microsoft Defender SmartScreen says "Windows protected your PC". Click **More info**.
 
-   ![SmartScreen with the More info link](images/install-windows-more-info.png)
+   ![SmartScreen with the More info link](images/install-windows-more-info.svg)
 
 3. Click **Run anyway**.
 
-   ![SmartScreen with the Run anyway button](images/install-windows-run-anyway.png)
+   ![SmartScreen with the Run anyway button](images/install-windows-run-anyway.svg)
 
 4. Follow the installer. It installs for your user account only, so it needs no administrator
    rights, and adds Media Identifier to the Start menu. If the Microsoft Edge WebView2 Runtime

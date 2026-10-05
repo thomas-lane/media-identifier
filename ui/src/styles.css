@@ -333,6 +333,7 @@ select.field {
 
 .seg {
   display: inline-flex;
+  align-self: flex-start;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
   overflow: hidden;
@@ -576,28 +577,60 @@ table.t tr.clickable:hover td {
 
 /* ---------- Review ---------- */
 
+/* The Review screen fills the window: the list and the evidence scroll on their own, so the
+   filter bar and the Continue button stay in view. */
+.screen.fill {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .review {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  flex: 1;
+  min-height: 0;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
 .file-list {
   border: 1px solid var(--line);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: auto;
   outline-offset: 2px;
+  min-height: 0;
+  flex: 1;
 }
 
 .file-list-head,
 .file-row {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) auto;
+  grid-template-columns: minmax(108px, 0.8fr) minmax(0, 1.4fr) 84px;
   gap: 10px;
   align-items: center;
   padding: 7px 10px;
+}
+
+.file-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-list-head > :last-child,
+.file-row > :last-child {
+  justify-self: end;
+}
+
+.file-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .file-list-head {
@@ -633,9 +666,25 @@ table.t tr.clickable:hover td {
 .evidence {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  align-self: start;
+  max-height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.evidence-body {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  position: sticky;
-  top: 12px;
+  overflow: auto;
+  min-height: 0;
+  padding: 14px 16px 0;
+}
+
+.evidence > .row-end {
+  padding: 0 16px 14px;
 }
 
 .quotes {
@@ -890,7 +939,7 @@ kbd {
   .two-col {
     grid-template-columns: 1fr;
   }
-  .evidence {
-    position: static;
+  .screen.fill {
+    overflow: visible;
   }
 }

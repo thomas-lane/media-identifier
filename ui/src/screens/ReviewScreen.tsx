@@ -96,7 +96,7 @@ export function ReviewScreen() {
   ];
 
   return (
-    <section className="screen" aria-labelledby="review-title">
+    <section className="screen fill" aria-labelledby="review-title">
       <div className="screen-head">
         <h1 id="review-title">
           Review · {request.show.name} <span className="muted small mono">{baseName(request.folder)}</span>
@@ -110,7 +110,7 @@ export function ReviewScreen() {
         </p>
       )}
       <div className="review">
-        <div>
+        <div className="review-list">
           <div
             ref={listRef}
             className="file-list"
@@ -335,11 +335,13 @@ function EvidencePanel({
   if (match.suggestion.kind === "playAll" || !review) {
     return (
       <div className="card evidence" aria-label="Evidence">
-        {header}
-        <p style={{ margin: 0 }}>
-          This is the play-all title: one long title containing the episodes in disc order. It is used to work out the
-          order of the other files and is left as it is.
-        </p>
+        <div className="evidence-body">
+          {header}
+          <p style={{ margin: 0 }}>
+            This is the play-all title: one long title containing the episodes in disc order. It is used to work out the
+            order of the other files and is left as it is.
+          </p>
+        </div>
       </div>
     );
   }
@@ -367,38 +369,39 @@ function EvidencePanel({
 
   return (
     <div className="card evidence" aria-label="Evidence">
-      {header}
-      <div>
-        <label className="eyebrow" htmlFor={`${ids}-pick`} style={{ display: "block" }}>
-          Suggested
-        </label>
-        <select id={`${ids}-pick`} className="field" value={value} onChange={(e) => setChoice(e.target.value)}>
-          {match.candidates.length > 0 && (
-            <optgroup label="Best matches">
-              {match.candidates.map((c) => (
-                <option key={episodeKeyId(c.episode)} value={`ep:${episodeKeyId(c.episode)}`}>
-                  {formatEpisodeCode(c.episode)} · {c.title} ({formatPercent(c.score)})
-                </option>
-              ))}
-            </optgroup>
+      <div className="evidence-body">
+        {header}
+        <div>
+          <label className="eyebrow" htmlFor={`${ids}-pick`} style={{ display: "block" }}>
+            Suggested
+          </label>
+          <select id={`${ids}-pick`} className="field" value={value} onChange={(e) => setChoice(e.target.value)}>
+            {match.candidates.length > 0 && (
+              <optgroup label="Best matches">
+                {match.candidates.map((c) => (
+                  <option key={episodeKeyId(c.episode)} value={`ep:${episodeKeyId(c.episode)}`}>
+                    {formatEpisodeCode(c.episode)} · {c.title} ({formatPercent(c.score)})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {others.length > 0 && (
+              <optgroup label="Other episodes">
+                {others.map((e) => (
+                  <option key={episodeKeyId(e.key)} value={`ep:${episodeKeyId(e.key)}`}>
+                    {formatEpisodeCode(e.key)} · {e.title}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <option value="extra">Not an episode (extra)</option>
+            <option value="skip">Skip this file</option>
+          </select>
+          {shared.length > 0 && (
+            <p className="small warn-text" style={{ margin: "6px 0 0" }}>
+              ⚠︎ Also chosen for {shared.map(baseName).join(", ")}. Only one file can be renamed to an episode.
+            </p>
           )}
-          {others.length > 0 && (
-            <optgroup label="Other episodes">
-              {others.map((e) => (
-                <option key={episodeKeyId(e.key)} value={`ep:${episodeKeyId(e.key)}`}>
-                  {formatEpisodeCode(e.key)} · {e.title}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          <option value="extra">Not an episode (extra)</option>
-          <option value="skip">Skip this file</option>
-        </select>
-        {shared.length > 0 && (
-          <p className="small warn-text" style={{ margin: "6px 0 0" }}>
-            ⚠︎ Also chosen for {shared.map(baseName).join(", ")}. Only one file can be renamed to an episode.
-          </p>
-        )}
       </div>
       {review.choice.kind === "notAnEpisode" && match.suggestion.kind === "notAnEpisode" && (
         <p style={{ margin: 0 }}>No episode's dialogue matches this file well. It is probably a bonus feature, so it is left as it is.</p>
@@ -438,6 +441,7 @@ function EvidencePanel({
         </div>
       )}
       {evidence?.playAllPosition && showingChosen && <PlayAllStrip position={evidence.playAllPosition} />}
+      </div>
       <ButtonRow
         others={[
           <button
@@ -451,7 +455,7 @@ function EvidencePanel({
         ]}
         primary={
           <button type="button" className="btn primary" onClick={onApprove} disabled={review.approved}>
-            {review.approved ? "Approved" : "Approve"}
+            {!review.approved ? "Approve" : review.choice.kind === "skip" ? "Skipped" : "Approved"}
           </button>
         }
       />

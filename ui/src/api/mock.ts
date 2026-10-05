@@ -88,6 +88,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   let nextJob = 1;
   const results = new Map<string, JobResults>();
   let updateDownloaded = false;
+  let updateDownloadCancelled = false;
 
   const later = (fn: () => void, steps = 1) => setTimeout(fn, stepMs * steps);
 
@@ -293,20 +294,35 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       }
     },
     downloadUpdate: () =>
-      new Promise<void>((resolve) => {
+      new Promise<void>((resolve, reject) => {
         const total = 84_000_000;
+        updateDownloadCancelled = false;
         [0.25, 0.5, 0.75, 1].forEach((f, i) =>
-          later(() => updateEvents.emit({ kind: "downloading", downloaded: total * f, total }), i + 1),
+          later(() => {
+            if (!updateDownloadCancelled) {
+              updateEvents.emit({ kind: "downloading", downloaded: total * f, total });
+            }
+          }, i + 1),
         );
         later(() => {
+          if (updateDownloadCancelled) {
+            reject(apiError("cancelled", "The download was cancelled."));
+            return;
+          }
           updateDownloaded = true;
           updateEvents.emit({ kind: "downloaded", version: UPDATE.version });
           resolve();
         }, 5);
       }),
+    cancelUpdateDownload: async () => {
+      updateDownloadCancelled = true;
+    },
     installUpdateAndRelaunch: async () => {
       if (runningJob) {
-        throw apiError("busy", "The update will install when identification finishes.");
+        throw apiError(
+          "busy",
+          "Media Identifier will relaunch to finish the update when identification finishes.",
+        );
       }
       if (!updateDownloaded) throw apiError("notFound", "No update has been downloaded.");
     },

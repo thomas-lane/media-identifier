@@ -215,3 +215,42 @@ async fn stale_tmdb_data_within_six_months_is_served_offline() {
         .unwrap();
     assert_eq!(list.len(), 4);
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_show_without_id_matches_is_found_by_exact_name_and_year() {
+    let t = FixtureTransport::new();
+    firefly(&t);
+    t.on_json(
+        &tmdb_url("/find/78874", &[("external_source", "tvdb_id")]),
+        r#"{"tv_results":[]}"#,
+    );
+    t.on_json(
+        &tmdb_url("/find/tt0303461", &[("external_source", "imdb_id")]),
+        r#"{"tv_results":[]}"#,
+    );
+    t.on_json(
+        &tmdb_url(
+            "/search/tv",
+            &[("query", "Firefly"), ("first_air_date_year", "2002")],
+        ),
+        &fixture("tmdb/search-firefly.json"),
+    );
+    t.on_json(&tmdb_url("/tv/1437", &[]), &fixture("tmdb/tv-1437.json"));
+    t.on_json(
+        &tmdb_url("/tv/1437/season/0", &[]),
+        &fixture("tmdb/tv-1437-season-0.json"),
+    );
+    t.on_json(
+        &tmdb_url("/tv/1437/season/1", &[]),
+        &fixture("tmdb/tv-1437-season-1.json"),
+    );
+    let s = sources(&t, keys());
+    let list = s
+        .episodes(&firefly_ref(), EpisodeOrdering::Aired)
+        .await
+        .unwrap();
+    assert!(
+        list.iter().all(|e| e.show_ref.id == "1437"),
+        "Firefly Lane must not match"
+    );
+}

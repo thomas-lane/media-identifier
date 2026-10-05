@@ -41,3 +41,24 @@ length, disc order), scored from 0 to 1.
 **Margin**: the score of a file's assigned option minus the score of its runner-up.
 
 **Confident / Check**: a suggestion whose margin is at least / below the confidence threshold.
+
+## Saving and releases
+
+<!-- owner: release module -->
+
+**History entry**: one save (rename in place or copy) as recorded in the History journal
+(`history.jsonl`); undoing it moves renamed files back and deletes unchanged copies. A CSV export
+changes no files and makes no entry.
+
+**Two-phase rename**: renaming every file first to a temporary name in its own folder, then to its
+target, so files can swap names or change only the case of their names.
+
+**Sidecar build**: the minimal LGPL ffmpeg and ffprobe programs built by
+`scripts/build-ffmpeg.sh`, as opposed to an ffmpeg installed on the computer.
+
+**Updater artifacts**: the signed files the app's updater downloads (`.app.tar.gz` on macOS, the
+NSIS `-setup.exe` on Windows, each with a `.sig`), listed with the version and notes in
+`latest.json`.
+
+**Ad-hoc signature**: a code signature that identifies no developer; Apple Silicon requires one to
+run any code, and it does not let an app skip the first-launch confirmation.

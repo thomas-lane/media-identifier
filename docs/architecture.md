@@ -69,8 +69,8 @@ command is missing from the list or from the UI client. Every command returns
 |---|---|---|
 | `job-event` | `JobEvent` | a job progresses |
 | `model-download` | `ModelStatus` | a speech model download progresses |
-| `update-event` | `UpdateEvent` | an accepted update downloads |
-| `update-available` | `UpdateInfo` | the launch-time check finds a version the user has not skipped |
+| `update-event` | `UpdateEvent` | an accepted update downloads (about once per percent) |
+| `update-available` | `UpdateInfo` | a background check (at launch, then daily) finds a version the user has not skipped and was not offered in the last 24 hours |
 
 ## Shared types
 
@@ -102,11 +102,15 @@ The sidecars are a minimal LGPL build. Components it must include:
 
 | Purpose | Components |
 |---|---|
-| Containers | demuxers `matroska`, `mov` (mp4/m4v/mov), `avi`, `mpegps` (VOB), `mpegts` |
-| Audio | decoders `ac3`, `eac3`, `aac`, `mp2`, `mp3`, `dca` (DTS), `pcm_*`, `flac`, `opus`, `vorbis`; filter `aresample`; encoder `pcm_f32le`; muxer `f32le` |
-| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `text`; encoder `srt`; muxer `srt` |
+| Containers | demuxers `matroska`, `mov` (mp4/m4v/mov), `avi`, `mpegps` (VOB), `mpegts`, and `mpegvideo` (raw MPEG video, which the VOB demuxer uses to recognise DVD video streams) |
+| Audio | decoders `ac3`, `eac3`, `aac`, `aac_latm`, `mp2`, `mp3` (and their float variants), `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, common `pcm_*` (including DVD and Blu-ray PCM); filters `aresample`, `aformat`, `anull`, `atrim`; encoders `pcm_f32le`, `pcm_s16le`; muxers `f32le`, `s16le`, `wav`, `null` |
+| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `text`; encoders `subrip`/`srt`; muxer `srt` |
+| Timestamps and stream details | parsers `aac`, `aac_latm`, `ac3`, `dca`, `flac`, `mlp`, `mpegaudio`, `opus`, `vorbis`, `h264`, `hevc`, `mpegvideo`, `vc1` |
 | I/O | protocols `file`, `pipe` |
 | Probing | ffprobe with JSON output |
+
+The exact configure options, source version and checksum are in `third_party/ffmpeg/NOTICE.md`;
+`docs/development.md` ("ffmpeg sidecars") explains the build.
 
 ## Data on disk
 
@@ -116,7 +120,8 @@ The sidecars are a minimal LGPL build. Components it must include:
 | API keys | `<app config>/api-keys.json`, mode 0600 on macOS | `src-tauri` |
 | Speech models | `<app data>/models/` | `mi-transcribe` |
 | Provider cache | `<app data>/cache.sqlite` | `mi-sources` |
-| History journal | `<app data>/history.jsonl` | `mi-rename` |
+| History journal (JSON Lines: every rename, copy and folder recorded before and after it happens) | `<app data>/history.jsonl` | `mi-rename` |
+| Last update offered (version and time, for "Remind me later") | `<app config>/update-offer.json` | `src-tauri` (`updater.rs`) |
 | Saved job results | `<app data>/jobs/` | `mi-core` |
 
 `<app config>` and `<app data>` are Tauri's per-app folders for the identifier

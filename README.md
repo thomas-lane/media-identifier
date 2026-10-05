@@ -23,13 +23,14 @@ step).
 | Command/event wiring between UI and app | Built; tested for name agreement only |
 | UI shell and mock backend | Built and tested in jsdom |
 | whisper.cpp build (Metal) | Builds and links on macOS arm64; transcription untested |
-| Updater (check, download, relaunch) | Built; untested (no published release) |
+| Updater (check, download, relaunch) | Built; scheduling and offer rules tested; launch-time check run against the real endpoint (fails quietly while releases are private); download and install untested (no published release) |
 | Folder scan, probing, audio decoding | Interface only |
 | Model download and verification | Interface only (checksums pinned) |
 | Episode lists, subtitles, lyrics, cache | Interface only |
 | Matching and confidence | Interface only |
-| Rename, copy, CSV export, undo | Interface only |
-| Release workflow, Windows build | Not started |
+| Rename, copy, CSV export, undo | Built and tested on temporary folders (macOS); Windows untested |
+| ffmpeg sidecars | macOS arm64 build run and checked on generated test files; Windows options cross-compiled with mingw-w64 but not run on Windows |
+| Release workflow, Windows build | macOS release bundle and updater signature built and checked locally; workflows lint-clean but never run on GitHub; Windows app build untested |
 
 ## Documentation
 

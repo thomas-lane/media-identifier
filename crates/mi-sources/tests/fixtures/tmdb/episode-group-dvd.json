@@ -1,0 +1,31 @@
+{
+  "description": "Episodes in the order of the DVD box set",
+  "episode_count": 4,
+  "group_count": 2,
+  "groups": [
+    {
+      "id": "g1",
+      "name": "DVD Volume 1",
+      "order": 1,
+      "locked": true,
+      "episodes": [
+        {"air_date": "2002-09-20", "episode_number": 1, "id": 71139, "name": "The Train Job", "overview": "The crew takes a job robbing a train.", "runtime": 43, "season_number": 1, "show_id": 1437, "order": 1},
+        {"air_date": "2002-12-20", "episode_number": 11, "id": 71148, "name": "Serenity", "overview": "The pilot.", "runtime": 86, "season_number": 1, "show_id": 1437, "order": 0},
+        {"air_date": "2002-09-27", "episode_number": 2, "id": 71140, "name": "Bushwhacked", "overview": "", "runtime": null, "season_number": 1, "show_id": 1437, "order": 2}
+      ]
+    },
+    {
+      "id": "g0",
+      "name": "Specials",
+      "order": 0,
+      "locked": true,
+      "episodes": [
+        {"air_date": "2005-12-20", "episode_number": 1, "id": 990001, "name": "Here's How It All Happened", "overview": "A featurette.", "runtime": 20, "season_number": 0, "show_id": 1437, "order": 0}
+      ]
+    }
+  ],
+  "id": "5b11c5520e0a265f9b000001",
+  "name": "DVD Order",
+  "network": null,
+  "type": 3
+}

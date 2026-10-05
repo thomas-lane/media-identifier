@@ -1,6 +1,6 @@
 [package]
 name = "mi-sources"
-description = "Episode lists (TVmaze, TMDb), reference text (SubDL, LRCLIB, embedded subtitles) and the SQLite cache."
+description = "Episode lists (TVmaze, TMDb), reference text (SubDL, LRCLIB, local and embedded subtitles) and the SQLite cache."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,10 +17,14 @@ tracing.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 rusqlite.workspace = true
-
+async-trait = "0.1.92"
+encoding_rs = "0.8.42"
+httpdate = "1.0.3"
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

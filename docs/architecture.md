@@ -14,7 +14,7 @@ src-tauri  ── commands, events, settings persistence, updater
 mi-core    ── engine: one job at a time, stage by stage, progress events
   ├── mi-media       ffprobe/ffmpeg sidecars: scan, probe, play-all, PCM, embedded subtitles
   ├── mi-transcribe  model catalog/download, sampling windows, whisper.cpp, hallucination filter
-  ├── mi-sources     TVmaze, TMDb, SubDL, LRCLIB, embedded text, SQLite cache, HTTP client
+  ├── mi-sources     TVmaze, TMDb, SubDL, LRCLIB, local and embedded text, SQLite cache, HTTP client
   ├── mi-match       text similarity, title hooks, duration, audio alignment, assignment
   └── mi-rename      naming, rename/copy/CSV, History journal
 mi-types   ── shared serde types, used by every crate above
@@ -33,7 +33,8 @@ free of I/O so it can be tested with plain data.
 2. **Confirm show** (`mi_sources::Sources::search_shows`): the user picks the show.
 3. **Episode list** (`Sources::episodes`): TVmaze, or TMDb numbering with a user key.
 4. **Reference text** (`Sources::reference_texts`, `mi_media::extract_text_subtitles`): subtitles,
-   lyrics, embedded text streams, summaries; all cached.
+   lyrics, embedded text streams, summaries; all cached. Extra local sources (for example
+   `mi_sources::local::LocalReferences`) are added with `Sources::add_reference_provider`.
 5. **Disc order** (`mi_media::stream_audio`, `mi_match::align`): fingerprint each file and the
    play-all, locate each file inside the play-all, and decide whether that order is trustworthy.
 6. **Listening** (`mi_transcribe`): choose windows, decode them to 16 kHz mono PCM, transcribe,

@@ -74,6 +74,19 @@ describe("Start and Confirm show", () => {
     expect(screen.getByText("Guessed from the folder name")).toBeInTheDocument();
   });
 
+  it("explains that a DVD folder copied from a disc is skipped", async () => {
+    const backend = createMockBackend({ stepMs: 1, modelReady: true });
+    renderApp({
+      ...backend,
+      scanFolder: async (folder) => ({
+        ...(await backend.scanFolder(folder)),
+        warnings: [{ kind: "unsupportedDiscFolder", folder: "VIDEO_TS", format: "dvd" }],
+      }),
+    });
+    await toConfirmScreen();
+    expect(screen.getByText(/VIDEO_TS is a DVD \(VIDEO_TS\) folder copied from a disc/)).toBeInTheDocument();
+  });
+
   it("opens a dropped folder", async () => {
     const backend = createMockBackend({ stepMs: 1, modelReady: true });
     let drop: ((e: { kind: "drop"; paths: string[] }) => void) | null = null;
@@ -334,6 +347,21 @@ describe("Updates", () => {
     await userEvent.click(screen.getByRole("button", { name: "Relaunch now" }));
     expect(relaunch).toHaveBeenCalledOnce();
   });
+
+  it("cancels an update download and keeps nothing to install", async () => {
+    const backend = createMockBackend({ modelReady: true, stepMs: 200 });
+    const cancel = vi.spyOn(backend, "cancelUpdateDownload");
+    renderApp(backend);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Check now" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Install update" }));
+    const progress = await screen.findByRole("dialog", { name: /Downloading Media Identifier 1\.3\.0/ });
+    await userEvent.click(within(progress).getByRole("button", { name: "Cancel" }));
+    expect(cancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 1400));
+    expect(screen.queryByText(/Update downloaded\./)).not.toBeInTheDocument();
+  }, 10_000);
 
   it("skips a version", async () => {
     const backend = createMockBackend({ modelReady: true });

@@ -30,9 +30,14 @@ export function UpdateDialog() {
           <span className="muted small">
             {d.total ? `${formatMegabytes(d.downloaded)} of ${formatMegabytes(d.total)}` : formatMegabytes(d.downloaded)}
           </span>
-          <button type="button" className="btn small" onClick={updates.hideDownload}>
-            Hide
-          </button>
+          <span className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn small" onClick={() => void updates.cancelDownload()}>
+              Cancel
+            </button>
+            <button type="button" className="btn small" onClick={updates.hideDownload}>
+              Hide
+            </button>
+          </span>
         </div>
         <p className="muted small" style={{ margin: 0 }}>
           The download continues in the background. You're asked before the app relaunches.

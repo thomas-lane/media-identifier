@@ -30,6 +30,8 @@ export interface UpdatesValue {
   remindLater(): void;
   /** Hides the download dialog; the download continues and the banner appears when done. */
   hideDownload(): void;
+  /** Stops the download; nothing is kept and the dialog closes. */
+  cancelDownload(): Promise<void>;
   relaunch(): Promise<void>;
   dismissBanner(): void;
 }
@@ -115,7 +117,8 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
     try {
       await backend.downloadUpdate();
     } catch (e) {
-      setDialog({ kind: "failed", info, message: toApiError(e).message });
+      const err = toApiError(e);
+      setDialog(err.code === "cancelled" ? { kind: "closed" } : { kind: "failed", info, message: err.message });
     }
   }, [backend, current]);
 
@@ -136,6 +139,14 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
     setDialog({ kind: "closed" });
   }, []);
   const hideDownload = useCallback(() => setHidden(true), []);
+  const cancelDownload = useCallback(async () => {
+    setDialog({ kind: "closed" });
+    try {
+      await backend.cancelUpdateDownload();
+    } catch {
+      // The download already ended; its own result decides what shows.
+    }
+  }, [backend]);
   const dismissBanner = useCallback(() => setBannerVisible(false), []);
 
   const relaunch = useCallback(async () => {
@@ -158,10 +169,25 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
       skip,
       remindLater,
       hideDownload,
+      cancelDownload,
       relaunch,
       dismissBanner,
     }),
-    [hidden, current, readyVersion, bannerVisible, relaunchError, checkNow, install, skip, remindLater, hideDownload, relaunch, dismissBanner],
+    [
+      hidden,
+      current,
+      readyVersion,
+      bannerVisible,
+      relaunchError,
+      checkNow,
+      install,
+      skip,
+      remindLater,
+      hideDownload,
+      cancelDownload,
+      relaunch,
+      dismissBanner,
+    ],
   );
   return <UpdatesContext.Provider value={value}>{children}</UpdatesContext.Provider>;
 }

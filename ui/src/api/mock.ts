@@ -68,7 +68,7 @@ export const MOCK_UPDATE: UpdateInfo = {
   version: "1.3.0",
   currentVersion: "1.2.1",
   notes:
-    "Disc order is now read from VIDEO_TS folders.\nKodi naming.\nFixed: very short files were skipped.",
+    "Faster listening on long files.\nKodi naming.\nFixed: very short files were skipped.",
   date: null,
 };
 

@@ -306,5 +306,12 @@ function ScanWarningText({ warning }: { warning: ScanSummary["warnings"][number]
           ⚠︎ {baseName(warning.fileId)} has no audio, so it can't be identified by listening.
         </p>
       );
+    case "unsupportedDiscFolder":
+      return (
+        <p className="small warn-text" style={{ margin: "8px 0 0" }}>
+          ⚠︎ {warning.folder ? `${warning.folder} is` : "This folder is"} a {warning.format === "dvd" ? "DVD (VIDEO_TS)" : "Blu-ray (BDMV)"}{" "}
+          folder copied from a disc, so its files were skipped. Rip the disc to titles with MakeMKV first.
+        </p>
+      );
   }
 }

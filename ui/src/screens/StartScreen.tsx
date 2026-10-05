@@ -72,7 +72,7 @@ export function StartScreen() {
         <button type="button" className="btn primary" onClick={() => void choose()} disabled={state.scanning}>
           {state.scanning ? "Reading folder…" : "Choose folder…"}
         </button>
-        <div className="muted small">MKV, MP4, M4V, AVI, TS and VIDEO_TS disc folders</div>
+        <div className="muted small">MKV, MP4, M4V, MOV, AVI, TS, M2TS, MPG and VOB files</div>
       </div>
       {state.error && (
         <p role="alert" className="alert bad">

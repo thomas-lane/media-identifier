@@ -10,14 +10,18 @@
 pub mod audio;
 pub mod play_all;
 pub mod probe;
+mod run;
 pub mod scan;
 pub mod sidecar;
 pub mod subtitles;
 
-pub use audio::{AudioChunk, ExtractOptions, Pcm, SAMPLE_RATE, extract_audio, stream_audio};
+pub use audio::{
+    AudioChunk, ExtractOptions, Pcm, SAMPLE_RATE, choose_audio_stream, extract_audio,
+    languages_match, stream_audio,
+};
 pub use play_all::{PlayAllThresholds, detect_play_all};
-pub use probe::probe;
-pub use scan::{ScanOptions, VIDEO_EXTENSIONS, scan_folder};
+pub use probe::{TEXT_SUBTITLE_CODECS, parse_probe, probe};
+pub use scan::{ScanOptions, VIDEO_EXTENSIONS, guess_show, scan_folder};
 pub use sidecar::{SidecarLookup, Sidecars, Tool};
 pub use subtitles::extract_text_subtitles;
 

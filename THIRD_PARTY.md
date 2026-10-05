@@ -21,7 +21,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 
 | Component | License | Used for |
 |---|---|---|
-| FFmpeg (ffmpeg, ffprobe sidecars) | LGPL-2.1-or-later | probing and audio decoding (separate executables) |
+| FFmpeg 9.0.2 (ffmpeg, ffprobe sidecars, built by `scripts/build-ffmpeg.sh`) | LGPL-2.1-or-later; notice and configure lines in `LICENSES/ffmpeg/` | probing, audio decoding and subtitle extraction (separate executables) |
 
 ## transcribe
 

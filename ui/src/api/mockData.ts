@@ -99,7 +99,16 @@ export const SCAN: ScanSummary = {
     file("title_t12.mkv", 178, "candidate"),
     file("title_t44.mkv", 501, "candidate"),
   ],
-  playAll: { fileId: "title_t00.mkv", durationS: 8091, chapterCount: 52, candidatesTotalS: 7650 },
+  playAll: {
+    fileId: "title_t00.mkv",
+    durationS: 8091,
+    chapterCount: 52,
+    candidatesTotalS: 7650,
+    chaptersMatched: 44,
+    confidence: 0.86,
+    reason:
+      "title_t00.mkv is 2:14:51 long, 6% longer than the other 46 files together (2:07:30). 44 of the 46 files have the length of one of its 52 chapters.",
+  },
   candidateCount: 5,
   showGuess: "Schoolhouse Rock",
   warnings: [{ kind: "missingShortTitles", chapters: 52, shortFiles: 46 }],

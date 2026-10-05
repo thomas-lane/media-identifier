@@ -28,8 +28,9 @@ free of I/O so it can be tested with plain data.
 ## A job, end to end
 
 1. **Scan** (`mi_media::scan_folder`): list video files, probe each with ffprobe, mark the play-all
-   title (duration close to the sum of the others), guess the show from the folder name, and warn
-   when the play-all has more chapters than short files were found.
+   title (duration close to the sum of the others, chapters matching their lengths), guess the
+   show from the folder name, and warn when the play-all has more chapters than short files were
+   found or when the folder holds a DVD or Blu-ray folder structure instead of ripped titles.
 2. **Confirm show** (`mi_sources::Sources::search_shows`): the user picks the show.
 3. **Episode list** (`Sources::episodes`): TVmaze, or TMDb numbering with a user key.
 4. **Reference text** (`Sources::reference_texts`, `mi_media::extract_text_subtitles`): subtitles,
@@ -98,15 +99,29 @@ counts as missing, because `src-tauri/build.rs` writes empty placeholders when t
 are absent so that the workspace compiles on a fresh clone. Release builds set
 `MI_REQUIRE_SIDECARS=1`, which makes `build.rs` fail on a missing or empty binary.
 
-The sidecars are a minimal LGPL build. Components it must include:
+The sidecars are a minimal LGPL build made by `scripts/build-ffmpeg.sh` (see
+[development](development.md#ffmpeg-sidecars)). It enables these FFmpeg components, named as
+FFmpeg's `configure` names them; `configure` adds the few video filters the ffmpeg program
+cannot be built without (`crop`, `format`, `hflip`, `null`, `rotate`, `transpose`, `trim`,
+`vflip`):
 
 | Purpose | Components |
 |---|---|
-| Containers | demuxers `matroska`, `mov` (mp4/m4v/mov), `avi`, `mpegps` (VOB), `mpegts` |
-| Audio | decoders `ac3`, `eac3`, `aac`, `mp2`, `mp3`, `dca` (DTS), `pcm_*`, `flac`, `opus`, `vorbis`; filter `aresample`; encoder `pcm_f32le`; muxer `f32le` |
-| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `text`; encoder `srt`; muxer `srt` |
+| Containers | demuxers `matroska` (mkv), `mov` (mp4/m4v/mov), `avi`, `mpegps` (mpg/vob), `mpegts` (ts/m2ts/mts) |
+| Audio | decoders `ac3`, `ac3_fixed`, `eac3`, `aac`, `aac_fixed`, `aac_latm`, `mp1`, `mp1float`, `mp2`, `mp2float`, `mp3`, `mp3float`, `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, `alac`, every `pcm_*`; filters `aresample`, `aformat`, `anull`, `atrim`; encoder `pcm_f32le`; muxer `pcm_f32le` (the `f32le` output format) |
+| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `movtext`, `text`; encoder `srt`; muxer `srt` |
+| Stream parsing (for ffprobe) | parsers `aac`, `aac_latm`, `ac3`, `dca`, `flac`, `mlp`, `mpegaudio`, `opus`, `vorbis`, `mpegvideo`, `h264`, `hevc`, `vc1` |
 | I/O | protocols `file`, `pipe` |
 | Probing | ffprobe with JSON output |
+
+There are no video decoders: video is never decoded, and ffprobe reads picture sizes from the
+container or the parsers. The license notice and the exact configure lines are in
+`LICENSES/ffmpeg/NOTICE.md`.
+
+`mi_media` runs every ffmpeg and ffprobe call through one helper (`crates/mi-media/src/run.rs`):
+stdin closed, no console window on Windows (`CREATE_NO_WINDOW`), stdout read on a helper
+thread, the last lines of stderr kept for the error message, and the child killed when the
+job's `CancelFlag` is set or the call returns early.
 
 ## Data on disk
 

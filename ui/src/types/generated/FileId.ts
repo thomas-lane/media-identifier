@@ -2,6 +2,6 @@
 
 /**
  * Stable identifier of a file within one scan: the file's path relative to the scanned folder,
- * using `/` separators on every OS (for example `title_t03.mkv` or `VIDEO_TS/VTS_01_1.VOB`).
+ * using `/` separators on every OS (for example `title_t03.mkv` or `Disc 2/title_t03.mkv`).
  */
 export type FileId = string;

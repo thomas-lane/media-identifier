@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Stable identifier of a file within one scan: the file's path relative to the scanned folder,
-/// using `/` separators on every OS (for example `title_t03.mkv` or `VIDEO_TS/VTS_01_1.VOB`).
+/// using `/` separators on every OS (for example `title_t03.mkv` or `Disc 2/title_t03.mkv`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub struct FileId(pub String);
 
@@ -148,6 +148,14 @@ pub struct PlayAllInfo {
     pub chapter_count: u32,
     /// Sum of the candidate files' durations in seconds, for comparison with `duration_s`.
     pub candidates_total_s: f64,
+    /// How many candidate files have the same length as one of the play-all's chapters (each
+    /// chapter counted once). A high count means the chapters mark one title each.
+    pub chapters_matched: u32,
+    /// How sure the scan is that this file is a play-all, from 0 to 1, combining how closely its
+    /// duration equals `candidates_total_s` and how many chapters line up with candidate files.
+    pub confidence: f32,
+    /// Plain-language explanation of the decision, for display and logs.
+    pub reason: String,
 }
 
 /// A problem found while scanning.
@@ -178,4 +186,25 @@ pub enum ScanWarning {
         /// The file.
         file_id: FileId,
     },
+    /// A folder holds a disc's own file structure (`VIDEO_TS` for DVD, `BDMV` for Blu-ray)
+    /// instead of ripped titles. Its files are skipped: one title is split across several files
+    /// there, so they cannot be identified one by one. Ripping the disc to titles (MakeMKV) first
+    /// produces files the app can use.
+    UnsupportedDiscFolder {
+        /// The disc folder, relative to the scanned folder with `/` separators; empty when the
+        /// scanned folder itself is the disc folder.
+        folder: String,
+        /// Which disc structure it is.
+        format: DiscFolderFormat,
+    },
+}
+
+/// A disc's own folder structure, as copied from the disc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum DiscFolderFormat {
+    /// A DVD `VIDEO_TS` folder (`.IFO`, `.BUP` and `.VOB` files).
+    Dvd,
+    /// A Blu-ray `BDMV` folder (`.m2ts` files under `STREAM`).
+    BluRay,
 }

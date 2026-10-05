@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Small-size variant for 16-32 px: full-bleed tile, three bars, strokes on a 16 px grid (64 units = 1 px at 16 px). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a7bf0"/>
+      <stop offset="1" stop-color="#1f56b8"/>
+    </linearGradient>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <circle cx="736" cy="736" r="224" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" rx="208" fill="url(#tile)"/>
+  <g fill="#fff" mask="url(#cut)">
+    <path fill-rule="evenodd" d="M224 192h512a96 96 0 0 1 96 96v384a96 96 0 0 1-96 96H224a96 96 0 0 1-96-96V288a96 96 0 0 1 96-96zM288 320a32 32 0 0 0-32 32v256a32 32 0 0 0 32 32h384a32 32 0 0 0 32-32V352a32 32 0 0 0-32-32z"/>
+    <rect x="320" y="416" width="64" height="128"/>
+    <rect x="448" y="384" width="64" height="192"/>
+    <rect x="576" y="416" width="64" height="128"/>
+  </g>
+  <g fill="none" stroke="#fff">
+    <circle cx="736" cy="736" r="136" stroke-width="80"/>
+    <line x1="860" y1="860" x2="904" y2="904" stroke-width="96" stroke-linecap="round"/>
+  </g>
+</svg>

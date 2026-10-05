@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="200" viewBox="0 0 880 200" role="img" aria-label="Media Identifier">
+  <image data-inline="../icon.svg" data-viewbox="100 100 824 824" x="107" y="44" width="112" height="112"/>
+  <text x="251" y="125" font-size="68" font-weight="700" fill="{{TEXT}}">Media Identifier</text>
+</svg>

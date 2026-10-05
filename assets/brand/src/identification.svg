@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="How one file is identified: its audio is transcribed, the heard words are compared with each episode's subtitles, the file is located inside the play-all title, and the signals are combined into the best overall assignment.">
+  <style>
+    .bg{fill:#ffffff} .panel{fill:#f6f7f9;stroke:#dde1e7;stroke-width:1.5}
+    .text{fill:#1d2430} .muted{fill:#5b6575} .accent{fill:#2f6fde} .onaccent{fill:#ffffff}
+    .track{fill:#dde1e7} .seg{fill:#e3e7ed} .fade{fill:#e3e7ed;opacity:.5} .mark{fill:#d3e2fd}
+    .chip{fill:#ffffff;stroke:#dde1e7;stroke-width:1.5} .chipsel{fill:#e6eefc;stroke:#2f6fde;stroke-width:1.5}
+    .warnsoft{fill:#fdf1dc} .warn{fill:#a86400} .line{stroke:#5b6575;stroke-width:1.5;fill:none}
+    @media (prefers-color-scheme: dark) {
+      .bg{fill:#1c1f24} .panel{fill:#24282e;stroke:#363b44}
+      .text{fill:#e7eaee} .muted{fill:#a2aab6} .accent{fill:#6ea1ff} .onaccent{fill:#10233f}
+      .track{fill:#363b44} .seg{fill:#30353d} .fade{fill:#30353d} .mark{fill:#2a3f66}
+      .chip{fill:#1c1f24;stroke:#363b44} .chipsel{fill:#24324c;stroke:#6ea1ff}
+      .warnsoft{fill:#3d311c} .warn{fill:#f0b14a} .line{stroke:#a2aab6}
+    }
+  </style>
+  <rect class="bg" width="1200" height="720" rx="16"/>
+
+  <!-- 1. Listen -->
+  <rect class="panel" x="32" y="32" width="552" height="276" rx="12"/>
+  <circle class="accent" cx="60" cy="68" r="14"/>
+  <text x="60" y="74" font-size="16" font-weight="700" class="onaccent" text-anchor="middle">1</text>
+  <text x="86" y="75" font-size="20" font-weight="600" class="text">Listen to the file</text>
+  <rect class="line" x="56" y="101" width="22" height="16" rx="3"/>
+  <text x="88" y="115" font-size="16" font-weight="600" class="text">title_t11.mkv<tspan font-weight="400" class="muted"> · 3:05 · short, so transcribed whole</tspan></text>
+  <g>
+    <rect class="accent" x="56" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="64" y="153" width="4" height="14" rx="2"/>
+    <rect class="accent" x="72" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="80" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="88" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="96" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="104" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="112" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="120" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="128" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="136" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="144" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="152" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="160" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="168" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="176" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="184" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="192" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="200" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="208" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="216" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="224" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="232" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="240" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="248" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="256" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="264" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="272" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="280" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="288" y="153" width="4" height="14" rx="2"/>
+    <rect class="accent" x="296" y="149" width="4" height="22" rx="2"/>
+    <rect class="accent" x="304" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="312" y="153" width="4" height="14" rx="2"/>
+    <rect class="accent" x="320" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="328" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="336" y="149" width="4" height="22" rx="2"/>
+    <rect class="accent" x="344" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="352" y="153" width="4" height="14" rx="2"/>
+    <rect class="accent" x="360" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="368" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="376" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="384" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="392" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="400" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="408" y="157" width="4" height="6" rx="2"/>
+    <rect class="accent" x="416" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="424" y="143" width="4" height="34" rx="2"/>
+    <rect class="accent" x="432" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="440" y="145" width="4" height="30" rx="2"/>
+    <rect class="accent" x="448" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="456" y="143" width="4" height="34" rx="2"/>
+    <rect class="accent" x="464" y="143" width="4" height="34" rx="2"/>
+    <rect class="accent" x="472" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="480" y="149" width="4" height="22" rx="2"/>
+    <rect class="accent" x="488" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="496" y="153" width="4" height="14" rx="2"/>
+    <rect class="accent" x="504" y="151" width="4" height="18" rx="2"/>
+    <rect class="accent" x="512" y="155" width="4" height="10" rx="2"/>
+    <rect class="accent" x="520" y="149" width="4" height="22" rx="2"/>
+    <rect class="accent" x="528" y="141" width="4" height="38" rx="2"/>
+    <rect class="accent" x="536" y="143" width="4" height="34" rx="2"/>
+    <rect class="accent" x="544" y="147" width="4" height="26" rx="2"/>
+    <rect class="accent" x="552" y="143" width="4" height="34" rx="2"/>
+  </g>
+  <text x="56" y="214" font-size="14" font-weight="600" class="muted">Heard in the file (speech recognition)</text>
+  <text x="56" y="246" font-size="19" class="text">“… <tspan data-mark-class="mark">lucky seven</tspan>, he's got the rhythm…</text>
+  <text x="56" y="278" font-size="19" class="text"><tspan data-mark-class="mark">seven</tspan> <tspan data-mark-class="mark">fourteen</tspan> <tspan data-mark-class="mark">twenty-one</tspan>…”</text>
+
+  <!-- 2. Compare -->
+  <rect class="panel" x="616" y="32" width="552" height="276" rx="12"/>
+  <circle class="accent" cx="644" cy="68" r="14"/>
+  <text x="644" y="74" font-size="16" font-weight="700" class="onaccent" text-anchor="middle">2</text>
+  <text x="670" y="75" font-size="20" font-weight="600" class="text">Compare with every episode's text</text>
+  <rect class="chip" x="640" y="98" width="184" height="30" rx="15"/>
+  <text x="732" y="118" font-size="15" class="text" text-anchor="middle">Elementary, My Dear</text>
+  <rect class="chipsel" x="834" y="98" width="198" height="30" rx="15"/>
+  <text x="933" y="118" font-size="15" font-weight="600" class="text" text-anchor="middle">Lucky Seven Sampson</text>
+  <rect class="chip" x="1042" y="98" width="110" height="30" rx="15"/>
+  <text x="1097" y="118" font-size="15" class="text" text-anchor="middle">Figure Eight</text>
+  <text x="640" y="164" font-size="15" class="muted">Subtitles, lyrics, summaries and titles. Shared words are</text>
+  <text x="640" y="186" font-size="15" class="muted">highlighted; nothing has to match exactly.</text>
+  <text x="640" y="214" font-size="14" font-weight="600" class="muted">Subtitles: Lucky Seven Sampson</text>
+  <text x="640" y="246" font-size="19" class="text">“… <tspan data-mark-class="mark">Lucky Seven</tspan> Sampson…</text>
+  <text x="640" y="278" font-size="19" class="text"><tspan data-mark-class="mark">seven</tspan>, <tspan data-mark-class="mark">fourteen</tspan>, <tspan data-mark-class="mark">twenty-one</tspan>, twenty-eight…”</text>
+  <circle class="chipsel" cx="600" cy="256" r="17"/>
+  <text x="600" y="263" font-size="20" font-weight="700" class="accent" text-anchor="middle">≈</text>
+
+  <!-- 3. Play-all -->
+  <rect class="panel" x="32" y="332" width="1136" height="150" rx="12"/>
+  <circle class="accent" cx="60" cy="368" r="14"/>
+  <text x="60" y="374" font-size="16" font-weight="700" class="onaccent" text-anchor="middle">3</text>
+  <text x="86" y="375" font-size="20" font-weight="600" class="text">Find it inside the play-all</text>
+  <text x="1144" y="375" font-size="16" class="muted" text-anchor="end">title_t00.mkv · 2:14:51 · 52 chapters</text>
+  <rect class="fade" x="56" y="408" width="60" height="38" rx="6"/>
+  <rect class="fade" x="1079" y="408" width="65" height="38" rx="6"/>
+  <text x="86" y="433" font-size="15" class="muted" text-anchor="middle">…</text>
+  <text x="1111" y="433" font-size="15" class="muted" text-anchor="middle">…</text>
+  <rect class="seg" x="120" y="408" width="133" height="38" rx="6"/>
+    <text x="186.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">8</text>
+    <rect class="seg" x="257" y="408" width="133" height="38" rx="6"/>
+    <text x="323.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">9</text>
+    <rect class="seg" x="394" y="408" width="133" height="38" rx="6"/>
+    <text x="460.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">10</text>
+    <rect class="accent" x="531" y="408" width="133" height="38" rx="6"/>
+    <text x="597.5" y="433" font-size="15" font-weight="600" class="onaccent" text-anchor="middle">11</text>
+    <rect class="seg" x="668" y="408" width="133" height="38" rx="6"/>
+    <text x="734.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">12</text>
+    <rect class="seg" x="805" y="408" width="133" height="38" rx="6"/>
+    <text x="871.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">13</text>
+    <rect class="seg" x="942" y="408" width="133" height="38" rx="6"/>
+    <text x="1008.5" y="433" font-size="15" font-weight="500" class="muted" text-anchor="middle">14</text>
+  <path class="line" d="M597.5 446v12"/>
+  <text x="597.5" y="474" font-size="15" class="text" text-anchor="middle">title_t11.mkv is found here by audio alignment: chapter 11, between its neighbours on the disc</text>
+
+  <!-- 4. Combine -->
+  <rect class="panel" x="32" y="506" width="552" height="182" rx="12"/>
+  <circle class="accent" cx="60" cy="542" r="14"/>
+  <text x="60" y="548" font-size="16" font-weight="700" class="onaccent" text-anchor="middle">4</text>
+  <text x="86" y="549" font-size="20" font-weight="600" class="text">Combine the signals</text>
+  <text x="56" y="588" font-size="16" class="text">Dialogue</text>
+  <rect class="track" x="190" y="578" width="300" height="10" rx="5"/><rect class="accent" x="190" y="578" width="144" height="10" rx="5"/>
+  <text x="556" y="588" font-size="16" font-weight="600" class="text" text-anchor="end">48%</text>
+  <text x="56" y="616" font-size="16" class="text">Title hook</text>
+  <rect class="track" x="190" y="606" width="300" height="10" rx="5"/><rect class="accent" x="190" y="606" width="210" height="10" rx="5"/>
+  <text x="556" y="616" font-size="16" font-weight="600" class="text" text-anchor="end">70%</text>
+  <text x="56" y="644" font-size="16" class="text">Length</text>
+  <rect class="track" x="190" y="634" width="300" height="10" rx="5"/><rect class="accent" x="190" y="634" width="240" height="10" rx="5"/>
+  <text x="556" y="644" font-size="16" font-weight="600" class="text" text-anchor="end">80%</text>
+  <text x="56" y="672" font-size="16" class="text">Disc order</text>
+  <rect class="track" x="190" y="662" width="300" height="10" rx="5"/><rect class="accent" x="190" y="662" width="285" height="10" rx="5"/>
+  <text x="556" y="672" font-size="16" font-weight="600" class="text" text-anchor="end">95%</text>
+
+  <!-- 5. Assign -->
+  <rect class="panel" x="616" y="506" width="552" height="182" rx="12"/>
+  <circle class="accent" cx="644" cy="542" r="14"/>
+  <text x="644" y="548" font-size="16" font-weight="700" class="onaccent" text-anchor="middle">5</text>
+  <text x="670" y="549" font-size="20" font-weight="600" class="text">Pick the best overall assignment</text>
+  <text x="640" y="588" font-size="16" font-weight="600" class="text">Lucky Seven Sampson</text>
+  <rect class="accent" x="850" y="577" width="200" height="12" rx="6"/>
+  <text x="640" y="616" font-size="16" class="text">Elementary, My Dear</text>
+  <rect class="track" x="850" y="605" width="112" height="12" rx="6"/>
+  <path class="line" d="M962 624v8h88v-8"/>
+  <text x="1006" y="650" font-size="14" class="muted" text-anchor="middle">margin</text>
+  <rect class="warnsoft" x="640" y="652" width="76" height="28" rx="14"/>
+  <text x="678" y="671" font-size="15" font-weight="600" class="warn" text-anchor="middle">Check</text>
+  <text x="728" y="671" font-size="15" class="muted">small margin, so you review it</text>
+</svg>

@@ -67,3 +67,18 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | csv | Unlicense OR MIT | CSV export |
 | libc (macOS only) | MIT OR Apache-2.0 | `renamex_np` for renames that never replace a file |
 | windows-sys (Windows only) | MIT OR Apache-2.0 | `MoveFileExW` for renames that never replace a file |
+
+## branding
+
+Build-time tools for `assets/brand/build.sh`; none of them ships with the app. The documentation
+graphics in `docs/images/` contain outlines of Inter glyphs.
+
+| Component | License | Used for |
+|---|---|---|
+| Inter 4.1 (font) | SIL Open Font License 1.1 | text in the README header and documentation figures, drawn as outlines |
+| fontTools | MIT | reading glyph outlines |
+| uharfbuzz (HarfBuzz) | Apache-2.0 (HarfBuzz: MIT) | text shaping and kerning |
+| librsvg (`rsvg-convert`) | LGPL-2.1-or-later | rendering the icon SVGs to PNG |
+| Pillow | MIT-CMU | writing `icon.ico` |
+| oxipng | MIT | lossless PNG compression |
+| Codex CLI image generation | OpenAI terms of use (output owned by the user) | icon and header concepts in `assets/brand/concepts/` |

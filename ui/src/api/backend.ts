@@ -29,6 +29,13 @@ import type {
 /** Stops a subscription. */
 export type Unsubscribe = () => void;
 
+/**
+ * Files or folders dragged over the window. The web view does not expose dropped paths to the
+ * page, so the app reports them: `hover` while something is over the window, `drop` with the
+ * native paths, `cancel` when the drag leaves.
+ */
+export type FileDropEvent = { kind: "hover" } | { kind: "drop"; paths: string[] } | { kind: "cancel" };
+
 /** Everything the UI can ask of the app. Every method rejects with an `ApiError` on failure. */
 export interface Backend {
   /** Running app version. */
@@ -52,8 +59,12 @@ export interface Backend {
 
   /** Opens the system folder picker; null when cancelled. */
   chooseFolder(): Promise<string | null>;
+  /** Opens the system save dialog for a CSV file; null when cancelled. */
+  chooseSaveFile(defaultPath: string): Promise<string | null>;
   /** Opens a web link in the default browser (attribution links). */
   openUrl(url: string): Promise<void>;
+  /** Opens a local file in its default app ("Play" on the Review screen). */
+  openFile(path: string): Promise<void>;
 
   /** Scans a folder of video files. */
   scanFolder(folder: string): Promise<ScanSummary>;
@@ -94,4 +105,6 @@ export interface Backend {
   onUpdateEvent(listener: (event: UpdateEvent) => void): Promise<Unsubscribe>;
   /** A background check found a new version. */
   onUpdateAvailable(listener: (info: UpdateInfo) => void): Promise<Unsubscribe>;
+  /** Files or folders dragged onto the window. */
+  onFileDrop(listener: (event: FileDropEvent) => void): Promise<Unsubscribe>;
 }

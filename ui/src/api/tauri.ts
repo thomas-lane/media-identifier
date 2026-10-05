@@ -3,8 +3,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 
 import {
   JOB_EVENT,
@@ -18,7 +19,7 @@ import type {
   UpdateEvent,
   UpdateInfo,
 } from "../types/generated";
-import type { Backend, Unsubscribe } from "./backend";
+import type { Backend, FileDropEvent, Unsubscribe } from "./backend";
 
 async function subscribe<T>(channel: string, listener: (payload: T) => void): Promise<Unsubscribe> {
   return listen<T>(channel, (event) => listener(event.payload));
@@ -40,7 +41,12 @@ export const tauriBackend: Backend = {
     const picked = await open({ directory: true, multiple: false });
     return typeof picked === "string" ? picked : null;
   },
+  chooseSaveFile: async (defaultPath) => {
+    const picked = await save({ defaultPath, filters: [{ name: "CSV", extensions: ["csv"] }] });
+    return typeof picked === "string" ? picked : null;
+  },
   openUrl: (url) => openUrl(url),
+  openFile: (path) => openPath(path),
 
   scanFolder: (folder) => invoke("scan_folder", { folder }),
   searchShows: (query) => invoke("search_shows", { query }),
@@ -63,4 +69,13 @@ export const tauriBackend: Backend = {
   onModelDownload: (listener) => subscribe<ModelStatus>(MODEL_DOWNLOAD_EVENT, listener),
   onUpdateEvent: (listener) => subscribe<UpdateEvent>(UPDATE_EVENT, listener),
   onUpdateAvailable: (listener) => subscribe<UpdateInfo>(UPDATE_AVAILABLE_EVENT, listener),
+  onFileDrop: (listener) =>
+    getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      let mapped: FileDropEvent | null = null;
+      if (payload.type === "enter") mapped = { kind: "hover" };
+      else if (payload.type === "drop") mapped = { kind: "drop", paths: payload.paths };
+      else if (payload.type === "leave") mapped = { kind: "cancel" };
+      if (mapped) listener(mapped);
+    }),
 };

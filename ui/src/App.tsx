@@ -1,71 +1,124 @@
-// App shell: navigation between Identify, History and Settings. The screens themselves
-// (Start, Confirm show, Identifying, Review, Rename, History, Settings, Updates) are built by
-// the UI module from the approved mockup; this shell only proves the backend wiring.
+// App shell: the sidebar (Identify, History, Settings, About), the update banner and dialog,
+// and the Identify flow's current step.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { toApiError, useBackend } from "./api";
-import type { RecentJob } from "./types/generated";
+import { UpdateBanner, UpdateDialog } from "./components/UpdateViews";
+import { usePlatform } from "./components/common";
+import { AboutScreen } from "./screens/AboutScreen";
+import { ConfirmShowScreen } from "./screens/ConfirmShowScreen";
+import { HistoryScreen } from "./screens/HistoryScreen";
+import { IdentifyingScreen } from "./screens/IdentifyingScreen";
+import { RenameScreen } from "./screens/RenameScreen";
+import { ReviewScreen } from "./screens/ReviewScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
+import { StartScreen } from "./screens/StartScreen";
+import { IdentifyProvider, useIdentify } from "./state/identify";
+import { fileProgress } from "./state/job";
+import { NavContext } from "./state/nav";
+import type { Section } from "./state/nav";
+import { SettingsProvider } from "./state/settings";
+import { UpdatesProvider } from "./state/updates";
 
-type Section = "identify" | "history" | "settings";
+export function App() {
+  return (
+    <SettingsProvider>
+      <IdentifyProvider>
+        <Shell />
+      </IdentifyProvider>
+    </SettingsProvider>
+  );
+}
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "identify", label: "Identify" },
   { id: "history", label: "History" },
-  { id: "settings", label: "Settings" },
 ];
 
-export function App() {
-  const backend = useBackend();
+const BOTTOM_SECTIONS: { id: Section; label: string }[] = [
+  { id: "settings", label: "Settings" },
+  { id: "about", label: "About" },
+];
+
+function Shell() {
+  const identify = useIdentify();
+  const platform = usePlatform();
   const [section, setSection] = useState<Section>("identify");
-  const [recent, setRecent] = useState<RecentJob[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const nav = useMemo(() => ({ section, go: setSection }), [section]);
+  const { job } = identify.state;
 
   useEffect(() => {
-    let active = true;
-    backend
-      .recentJobs()
-      .then((jobs) => active && setRecent(jobs))
-      .catch((e: unknown) => active && setError(toApiError(e).message));
-    return () => {
-      active = false;
+    document.documentElement.dataset.platform = platform;
+  }, [platform]);
+
+  // Settings opens with ⌘, on macOS and Ctrl+, on Windows, as in other desktop apps.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = platform === "mac" ? e.metaKey : e.ctrlKey;
+      if (mod && e.key === ",") {
+        e.preventDefault();
+        setSection("settings");
+      }
     };
-  }, [backend]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [platform]);
+
+  const counts = job?.phase === "running" ? fileProgress(job, identify.state.scan?.playAll?.fileId ?? null) : null;
+  const progress = counts ? `${counts.done}/${counts.total || "…"}` : null;
+
+  const item = (s: { id: Section; label: string }) => (
+    <button
+      key={s.id}
+      type="button"
+      className="nav-item"
+      aria-current={section === s.id ? "page" : undefined}
+      onClick={() => setSection(s.id)}
+    >
+      {s.label}
+      {s.id === "identify" && progress && (
+        <span className="nav-badge" aria-label={`Identifying, ${progress} files done`}>
+          {progress}
+        </span>
+      )}
+    </button>
+  );
 
   return (
-    <div className="app">
-      <nav className="nav" aria-label="Main">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className="nav-item"
-            aria-current={section === s.id ? "page" : undefined}
-            onClick={() => setSection(s.id)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </nav>
-      <main className="content">
-        {section === "identify" && (
-          <section>
-            <h1>Identify episodes</h1>
-            {error && <p role="alert">{error}</p>}
-            <h2 className="section-label">Recent</h2>
-            <ul className="recent">
-              {recent?.map((job) => (
-                <li key={job.jobId}>
-                  {job.showName} · {job.fileCount} files
-                  {job.toReview > 0 ? ` · ${job.toReview} to review` : " · Done"}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {section === "history" && <h1>History</h1>}
-        {section === "settings" && <h1>Settings</h1>}
-      </main>
-    </div>
+    <NavContext.Provider value={nav}>
+      <UpdatesProvider jobRunning={identify.jobRunning}>
+        <div className="shell">
+          <nav className="shell-nav" aria-label="Main">
+            {SECTIONS.map(item)}
+            <div className="nav-spacer" />
+            {BOTTOM_SECTIONS.map(item)}
+          </nav>
+          <main className="shell-main">
+            <UpdateBanner jobRunning={identify.jobRunning} />
+            {section === "identify" && <IdentifyStep />}
+            {section === "history" && <HistoryScreen />}
+            {section === "settings" && <SettingsScreen />}
+            {section === "about" && <AboutScreen />}
+          </main>
+        </div>
+        <UpdateDialog />
+      </UpdatesProvider>
+    </NavContext.Provider>
   );
+}
+
+function IdentifyStep() {
+  const { state } = useIdentify();
+  switch (state.step) {
+    case "start":
+      return <StartScreen />;
+    case "confirm":
+      return <ConfirmShowScreen />;
+    case "identifying":
+      return <IdentifyingScreen />;
+    case "review":
+      return <ReviewScreen />;
+    case "rename":
+      return <RenameScreen />;
+  }
 }

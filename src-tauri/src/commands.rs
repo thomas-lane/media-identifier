@@ -60,17 +60,21 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
 /// the last check, skipped version) keep their stored values: the window's copy may be stale.
 #[tauri::command]
 pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), ApiError> {
-    let stored = state.settings.settings();
-    let settings = Settings {
-        last_update_check_ms: stored.last_update_check_ms,
-        skipped_update_version: stored.skipped_update_version,
-        ..settings
-    };
+    let settings = from_window(state.settings.settings(), settings);
     state.settings.save(settings.clone()).map_err(io_error)?;
     state
         .engine
         .update_settings(settings, state.settings.api_keys());
     Ok(())
+}
+
+/// The settings the window sent, with the fields only the updater writes kept from `stored`.
+fn from_window(stored: Settings, sent: Settings) -> Settings {
+    Settings {
+        last_update_check_ms: stored.last_update_check_ms,
+        skipped_update_version: stored.skipped_update_version,
+        ..sent
+    }
 }
 
 /// Sets or clears an API key (`null` or empty clears).
@@ -211,6 +215,25 @@ mod tests {
     fn ui_client() -> String {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/api/tauri.ts");
         std::fs::read_to_string(path).expect("ui/src/api/tauri.ts exists")
+    }
+
+    #[test]
+    fn saving_from_the_window_keeps_the_updater_fields() {
+        let stored = Settings {
+            last_update_check_ms: Some(1_000),
+            skipped_update_version: Some("1.3.0".into()),
+            ..Settings::default()
+        };
+        let sent = Settings {
+            speech_model: mi_types::SpeechModel::Fast,
+            last_update_check_ms: None,
+            skipped_update_version: None,
+            ..Settings::default()
+        };
+        let saved = from_window(stored, sent);
+        assert_eq!(saved.speech_model, mi_types::SpeechModel::Fast);
+        assert_eq!(saved.last_update_check_ms, Some(1_000));
+        assert_eq!(saved.skipped_update_version.as_deref(), Some("1.3.0"));
     }
 
     #[test]

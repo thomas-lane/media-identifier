@@ -91,6 +91,60 @@ implements it in memory with sample data (`mockData.ts`), simulating jobs, downl
 with timers. `getBackend()` picks the mock under `npm run dev:mock` or outside Tauri, so every
 screen can be developed in a normal browser and tested in jsdom.
 
+Three `Backend` methods use Tauri plugins and APIs directly instead of a command:
+
+| Method | Implemented with | Used for |
+|---|---|---|
+| `chooseSaveFile(defaultPath)` | `save` from `@tauri-apps/plugin-dialog`, CSV filter | the CSV path on the Rename screen |
+| `openFile(path)` | `openPath` from `@tauri-apps/plugin-opener` | "Play" on the Review screen |
+| `onFileDrop(listener)` | `getCurrentWebview().onDragDropEvent` | dropping a folder on the Start screen |
+
+The web view does not give the page the native path of a dropped file, so drops come from
+Tauri's drag-and-drop event (`dragDropEnabled` in `tauri.conf.json`). `openFile` needs the
+`opener:allow-open-path` permission in `src-tauri/capabilities/default.json`; its scope lists
+only video extensions (`**/*.mkv`, `**/*.mp4` and the others the scan accepts, in lower and
+upper case), so the UI can open a video in the default player but cannot launch programs.
+
+In the browser, the mock reads simulation options from the page URL, which helps when checking
+screens by hand: `stepMs` and `downloadStepMs` (delay between simulated steps, ms), `model=ready`
+(skip the model download), `update=available|upToDate|failed` (the "Check now" answer),
+`announceUpdate=<ms>` (simulate the launch-time announcement), and `platform=mac|windows`
+(follow that OS's conventions). For example
+`http://localhost:5173/?model=ready&stepMs=400&platform=windows`.
+
+## The UI
+
+`ui/src/App.tsx` draws the sidebar (Identify, History, Settings, About) and the current
+screen (`ui/src/screens/`). State that outlives a screen lives in React context providers under
+`ui/src/state/`:
+
+| Provider | Holds |
+|---|---|
+| `identify.tsx` | the Identify flow's step (Start, Confirm show, Identifying, Review, Rename), the scan, the job folded from `job-event`s (`job.ts`), and the user's review choices |
+| `updates.tsx` | the update dialog, download progress and the "Update downloaded" banner |
+| `settings.tsx` | the settings, saved on every change |
+
+Leaving the flow for History or Settings keeps the job running and the review choices intact.
+Job events that arrive before `startIdentification` returns the job id are buffered and applied
+once the id is known, so the first events of a fast job are never lost. Pure logic (review
+choices and counts in `lib/review.ts`, the rename preview in `lib/plan.ts`, formatting, paths,
+platform conventions) lives in `ui/src/lib/` and is tested without rendering.
+
+Review choices become `ReviewDecision`s only when the rename plan is requested: a confident
+suggestion starts approved, a "Check" suggestion starts pending, and an extra starts as "Not an
+episode". Pending files are left untouched by the plan, as are the play-all and extras.
+
+The update flow asks before downloading and never interrupts identification: an update announced
+while a job runs is shown when the job ends, and "Relaunch now" is disabled while a job runs.
+Dialog buttons follow the platform: the default button is last on macOS and first on Windows
+(`lib/platform.ts`, from the web view's user agent). Light and dark follow the system through
+`prefers-color-scheme`; colors are tokens on `:root` in `ui/src/styles.css`.
+
+The speech model download starts by itself the first time the Start screen opens without the
+model, because nothing can be identified without it; "Identify" stays disabled until it is ready.
+Files are listed without video thumbnails because the ffmpeg sidecars are an audio-only build
+with no video decoders.
+
 ## Helper executables
 
 ffmpeg and ffprobe are Tauri sidecars (`bundle.externalBin` in `src-tauri/tauri.conf.json`):

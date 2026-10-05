@@ -1,12 +1,12 @@
 import { createContext, useContext } from "react";
 
 import type { Backend } from "./backend";
-import { createMockBackend } from "./mock";
+import { createMockBackend, mockOptionsFromUrl } from "./mock";
 import { tauriBackend } from "./tauri";
 
-export type { Backend, Unsubscribe } from "./backend";
+export type { Backend, FileDropEvent, Unsubscribe } from "./backend";
 export { isApiError, toApiError } from "./errors";
-export { createMockBackend } from "./mock";
+export { createMockBackend, MOCK_UPDATE } from "./mock";
 
 /** True inside the Tauri window (Tauri injects `__TAURI_INTERNALS__`). */
 export function isTauri(): boolean {
@@ -15,11 +15,13 @@ export function isTauri(): boolean {
 
 /**
  * The backend for this run: the mock when built with `VITE_BACKEND=mock` (`npm run dev:mock`) or
- * when not running inside Tauri (a plain browser), otherwise Tauri.
+ * when not running inside Tauri (a plain browser), otherwise Tauri. In the browser the mock reads
+ * simulation options from the page URL (see `mockOptionsFromUrl`) and treats any drop on the
+ * window as the sample folder.
  */
 export function getBackend(): Backend {
   if (import.meta.env.VITE_BACKEND === "mock" || !isTauri()) {
-    return createMockBackend();
+    return createMockBackend({ stepMs: 250, downloadStepMs: 400, ...mockOptionsFromUrl(), windowDrops: true });
   }
   return tauriBackend;
 }

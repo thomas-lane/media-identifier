@@ -108,13 +108,71 @@ The sidecars are a minimal LGPL build. Components it must include:
 | I/O | protocols `file`, `pipe` |
 | Probing | ffprobe with JSON output |
 
+## Transcription
+
+`mi-transcribe` turns 16 kHz mono PCM into timed, filtered text. The decoding and filtering rules,
+and the reasons for them, are in [identification.md](identification.md#listening); this section
+covers how the crate is put together and used.
+
+| Module | Responsibility |
+|---|---|
+| `catalog.rs` | The three pinned files: both speech models and the VAD model (URL at a fixed commit, size, SHA-256) |
+| `store.rs` | `ModelStore`: download, resume and verify files in `<app data>/models/`; report their state |
+| `sampling.rs` | `plan_windows`, `escalation_windows`, `use_vad`: which time ranges to transcribe |
+| `engine.rs` | `Transcriber` trait, `WhisperTranscriber` (whisper.cpp through `whisper-rs`), `DecodeOptions` |
+| `vad.rs` | Joining detected speech into one buffer and mapping times back |
+| `filter.rs` | `HallucinationFilter`: marking invented segments |
+| `eta.rs` | `SpeedEstimator`: transcription speed and remaining time |
+| `lib.rs` | `add_window`: merging each window's segments into one `Transcript` |
+
+**Use in a job.** `mi-core` loads one `WhisperTranscriber` per job (`WhisperTranscriber::load`
+with the model from `ModelStore::model_path`, then `with_vad_model` with
+`ModelStore::vad_model_path`); loading takes about a second and the decoding state is reused for
+every window. For each file it plans windows with `plan_windows`, decodes each window's audio
+with `mi_media::extract_audio`, picks `DecodeOptions::for_file`, calls `transcribe` on a blocking
+thread with the window start as `start_s` (segment times come back as file times), and adds the
+result with `add_window`. When matching reports a low margin it asks `escalation_windows` for
+more ranges and repeats. `Transcriber` is a trait so that pipeline tests can script transcripts
+without a model.
+
+**Processors.** On macOS whisper.cpp runs on the GPU through Metal (`Accelerator::AppleGpu`), with
+its shaders embedded in the binary. On Windows it runs on the CPU; the crate feature `vulkan` adds
+a Vulkan GPU backend, used when a Vulkan device is present. If the GPU context cannot be created
+the model is loaded on the CPU instead. Flash attention is on in both cases.
+
+**Cancellation.** whisper.cpp polls an abort callback between encoder and decoder passes, so a
+cancelled `transcribe` returns `Cancelled` within one pass, and the transcriber stays usable.
+`whisper-rs` 0.16's `set_abort_callback_safe` calls the stored closure through the wrong type
+unless the closure is passed already boxed as `Box<dyn FnMut() -> bool>`; `engine.rs` does that,
+and the ignored test `transcription_is_never_aborted_without_cancellation` guards it.
+
+**Downloads.** `ModelStore::download` fetches the speech model and then the VAD model. Each file
+is written to `<file>.part`; a later call, or a retry after a dropped connection, continues it with
+an HTTP `Range` request, and a server that answers with the whole file restarts it. A
+connection that sends nothing for 60 seconds is dropped and retried; the download fails after
+three requests in a row deliver no bytes. When the `.part` file reaches the pinned size it is hashed
+with SHA-256; on a match it is renamed to its final name, otherwise it is deleted. A file under
+its final name is therefore always complete and verified, which is why `ModelStore::status`
+checks only sizes. Progress reaches the caller every 250 ms as a `ModelStatus` (`Downloading`
+with the speed over the last three seconds, then `Verifying`, then `Ready`); cancelling keeps the
+`.part` file and reports `Paused`. A model counts as `Ready` only when the VAD model is present
+too.
+
+**Logging.** whisper.cpp's log output goes to `tracing` under the target `whisper_rs`. On macOS a
+model load logs `ggml_metal_library_init_from_source: error compiling source` once: whisper.cpp
+is probing for the Metal tensor API, which it then disables; decoding continues on the GPU.
+
+**Time estimates.** `audio_cost_seconds` counts each window as its length but at least 30
+seconds, because whisper.cpp encodes audio in 30-second blocks. `SpeedEstimator` starts from a
+guess per model and processor and moves to the speed measured on the computer as windows finish.
+
 ## Data on disk
 
 | What | Where | Owner crate |
 |---|---|---|
 | Settings | `<app config>/settings.json` | `src-tauri` (`settings_store.rs`) |
 | API keys | `<app config>/api-keys.json`, mode 0600 on macOS | `src-tauri` |
-| Speech models | `<app data>/models/` | `mi-transcribe` |
+| Speech models and the VAD model (and `.part` files of unfinished downloads) | `<app data>/models/` | `mi-transcribe` |
 | Provider cache | `<app data>/cache.sqlite` | `mi-sources` |
 | History journal | `<app data>/history.jsonl` | `mi-rename` |
 | Saved job results | `<app data>/jobs/` | `mi-core` |

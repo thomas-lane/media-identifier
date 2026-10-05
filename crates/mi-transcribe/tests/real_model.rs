@@ -43,8 +43,12 @@ fn init_logging() {
 /// Downloads the Fast model if needed. A fresh download is cancelled once after 5 MB and then
 /// resumed, so the real Hugging Face redirect and `Range` handling are exercised.
 async fn fast_model() -> (ModelStore, PathBuf) {
+    ensure_model(SpeechModel::Fast).await
+}
+
+/// Downloads `model` if needed, as described for [`fast_model`].
+async fn ensure_model(model: SpeechModel) -> (ModelStore, PathBuf) {
     let store = ModelStore::new(model_dir());
-    let model = SpeechModel::Fast;
     if store.status(model).state == ModelState::Ready {
         let path = store.model_path(model);
         return (store, path);
@@ -326,4 +330,36 @@ async fn transcription_is_never_aborted_without_cancellation() {
             assert!(words(&segments).contains("midnight"));
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "downloads the 547 MiB Accurate model"]
+async fn accurate_model_transcribes_generated_speech() {
+    init_logging();
+    let (_store, path) = ensure_model(SpeechModel::Accurate).await;
+    let scratch = tempfile::tempdir().unwrap();
+    let samples = say(SPEECH, scratch.path());
+    let audio_s = samples.len() as f64 / f64::from(SAMPLE_RATE);
+    let mut transcriber = WhisperTranscriber::load(&path, true).unwrap();
+    // The first call compiles GPU kernels; time the second.
+    transcriber
+        .transcribe(&samples, 0.0, &DecodeOptions::default(), &CancelFlag::new())
+        .unwrap();
+    let started = Instant::now();
+    let segments = transcriber
+        .transcribe(&samples, 0.0, &DecodeOptions::default(), &CancelFlag::new())
+        .unwrap();
+    let elapsed = started.elapsed().as_secs_f64();
+    for s in &segments {
+        println!("{:7.2}-{:7.2} {:?}", s.start_s, s.end_s, s.text);
+    }
+    println!(
+        "Accurate: {audio_s:.1} s of audio in {elapsed:.2} s ({:.1}x real time, Metal)",
+        audio_s / elapsed
+    );
+    let heard = words(&segments);
+    assert!(
+        heard.contains("lighthouse") && heard.contains("harbor"),
+        "{heard:?}"
+    );
 }

@@ -28,8 +28,8 @@ pub fn prior_speed(model: SpeechModel, accelerator: Accelerator) -> f64 {
     match (model, accelerator) {
         (SpeechModel::Fast, Accelerator::AppleGpu | Accelerator::Vulkan) => 40.0,
         (SpeechModel::Accurate, Accelerator::AppleGpu | Accelerator::Vulkan) => 15.0,
-        (SpeechModel::Fast, Accelerator::Cpu) => 8.0,
-        (SpeechModel::Accurate, Accelerator::Cpu) => 2.0,
+        (SpeechModel::Fast, Accelerator::Cpu) => 4.0,
+        (SpeechModel::Accurate, Accelerator::Cpu) => 1.0,
     }
 }
 

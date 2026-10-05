@@ -30,8 +30,11 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | whisper-rs, whisper-rs-sys | Unlicense | Rust bindings to whisper.cpp |
 | whisper.cpp, ggml | MIT | speech recognition (compiled in) |
 | Whisper model weights (`ggerganov/whisper.cpp` conversions) | MIT | downloaded on first run |
+| Silero VAD model (`ggml-org/whisper-vad` conversion of snakers4/silero-vad) | MIT | voice activity detection, downloaded with the speech model |
 | sha2, hex | MIT OR Apache-2.0 | download verification |
-| reqwest | MIT OR Apache-2.0 | downloads |
+| reqwest, futures-util | MIT OR Apache-2.0 | downloads |
+| flate2 | MIT OR Apache-2.0 | compression ratio of recognised text |
+| hound (tests and example only) | Apache-2.0 | reading WAV files |
 
 ## sources
 

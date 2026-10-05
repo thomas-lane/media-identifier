@@ -93,32 +93,104 @@ pictures of text, which would need character recognition, so they are not used.
 
 <!-- owner: transcribe module -->
 
-Speech is recognised locally with whisper.cpp. Two models are offered:
+Speech is recognised locally with whisper.cpp, an implementation of OpenAI's Whisper speech
+model, compiled into the app. Two models are offered:
 
 | Setting | Model file | Size |
 |---|---|---|
 | Accurate (default) | `ggml-large-v3-turbo-q5_0.bin` | 547 MiB |
-| Fast | `ggml-small.en-q5_1.bin` | 181 MiB |
+| Fast | `ggml-small.en-q5_1.bin` (English only) | 181 MiB |
 
-Both are downloaded on first use from Hugging Face (`ggerganov/whisper.cpp`, pinned to one
-repository revision) and accepted only when size and SHA-256 match the values pinned in
-`crates/mi-transcribe/src/catalog.rs`.
+Either is downloaded on first use from Hugging Face (`ggerganov/whisper.cpp`), together with the
+885 KB Silero voice activity detection model (`ggml-org/whisper-vad`). Each URL names a fixed
+repository commit, so the file behind it cannot change, and a file is accepted only when its size
+and SHA-256 match the values pinned in `crates/mi-transcribe/src/catalog.rs`. How downloads
+resume and are verified is described in [architecture.md](architecture.md#transcription).
 
-**Windows.** Files of six minutes or less are transcribed whole: short musical clips need every
-second. Longer files are sampled in four windows of about 105 seconds centred at 15%, 40%, 65%
-and 85% of the runtime, which skips opening and closing credits shared by every episode. When the
-match margin after sampling is low, more windows (or the whole file) are transcribed. The
-"Listen to a sample of each file" setting turns sampling off.
+### Which parts of a file are transcribed
 
-**Decoding.** English by default; previous text is not fed back as a prompt (`no_context`), so one
-misheard line cannot steer the rest; non-speech tokens are suppressed; a failed decode is retried
-at higher temperatures. Voice activity detection is off for files of six minutes or less and for
-music-heavy content, where it cuts sung words.
+A *window* is a time range of a file that is transcribed (see the [glossary](glossary.md)).
 
-**Invented text.** Over music and silence the model writes phrases that were never said
-("Thank you.", "Subtitles by ...") or repeats one line. Such segments are marked and left out of
-matching: known phrases, back-to-back repeats, text whose gzip compression ratio exceeds 2.4, and
-segments the model rates as probably not speech.
+- **Files of six minutes or less** are transcribed whole, as one window. Short clips such as
+  two-minute songs need every second to be told apart, and decoding a few minutes is quick.
+- **Longer files** get four windows of 105 seconds centred at 15%, 40%, 65% and 85% of the
+  runtime. Opening and closing credits are the same in every episode, so the first and last
+  minutes say little about which episode a file is. A window that would cross the start or end
+  of the file is moved inside it, and overlapping windows are merged.
+- **Escalation.** When matching leaves a file with a low margin, more of it is transcribed
+  (`mi_transcribe::escalation_windows`): one window of up to 105 seconds in the middle of each
+  untranscribed gap between two windows that is at least 20 seconds long. Repeating this fills
+  the middle of the file progressively; only when no such gap is left are the gaps before the
+  first and after the last window used, since they hold the credits. Asked for the whole file,
+  it returns every untranscribed gap of at least one second. Escalation never returns a range
+  that was already transcribed.
+- The setting "Listen to a sample of each file" turned off makes every file one whole-file
+  window.
+
+### Decoding settings
+
+Each window is decoded with these settings (`mi_transcribe::DecodeOptions`):
+
+- **Language**: English by default. The Fast model only knows English.
+- **No carried-over text.** Whisper normally feeds the text of the previous 30-second block back
+  in as a prompt, which keeps spelling consistent but lets one misheard or invented line steer
+  everything after it. The prompt is turned off entirely (`no_context` and a prompt budget of
+  zero tokens), because a wrong guess repeated through a file would match the wrong episode
+  with false confidence.
+- **Non-speech tokens suppressed**, so music notes and sound descriptions are not written out.
+- **Temperature fallback.** The first decode is greedy (temperature 0). When it fails Whisper's
+  quality checks (average token log-probability below -1, or a token entropy below 2.4, which
+  indicates looping), whisper.cpp decodes again at temperatures 0.2, 0.4, ... up to 1.0, keeping
+  the most probable of five samples each time. This rescues passages where the greedy decode
+  got stuck.
+
+### Voice activity detection
+
+Voice activity detection (VAD) finds the stretches of audio that contain speech, using the Silero
+model. With VAD, only those stretches are decoded: they are joined into one shorter buffer with
+0.2 seconds of silence between them (stretches less than 0.3 seconds apart are joined first, and
+each is padded by 0.1 seconds so first and last syllables survive), the buffer is transcribed in
+one call, and each segment's times are mapped back to the original file. A window with no speech
+gives no segments. Skipping music beds and silence saves time and removes the main source of
+invented text.
+
+VAD is used only for files longer than six minutes that are not music-heavy
+(`mi_transcribe::use_vad`; the caller decides what is music-heavy, for example a show whose
+reference text is song lyrics). The detector treats singing as non-speech in places and cuts sung
+words, and short files are mostly speech or song anyway.
+
+whisper.cpp has its own VAD step, but it runs only through the context-level `whisper_full` call;
+the per-state call that `whisper-rs` uses ignores the setting. The app therefore runs the detector
+itself (`crates/mi-transcribe/src/vad.rs`).
+
+### Invented text
+
+Over music and silence the model writes phrases that were never said ("Thank you.", "Subtitles
+by ...") or repeats one line. Such text would match every episode equally and hide the real
+signal. `mi_transcribe::HallucinationFilter` marks these *segments* (a segment is one timed piece
+of recognised text) with a reason; marked segments stay visible in the evidence panel but are left
+out of matching. Text is compared after lowercasing, removing apostrophes and turning all other
+punctuation into spaces. Each segment is checked for these reasons in order, and the first that
+applies is recorded:
+
+1. **Known phrase**: the whole segment is one of a list of phrases ("thank you", "thanks for
+   watching", "please subscribe", "you", "bye", ...), possibly repeated; or it starts with a
+   credit prefix ("subtitles by", "captions by", "transcribed by", "translated by", "amara org",
+   ...). The full lists are in `HallucinationFilter::default` in
+   `crates/mi-transcribe/src/filter.rs`.
+2. **High compression ratio**: the segment's text, compressed with zlib, shrinks by more than a
+   factor of 2.4. Ordinary sentences compress by less than 2; a line looped many times compresses
+   far better. OpenAI's Whisper uses the same check and threshold.
+3. **Not speech**: the segment is only a sound description ("[MUSIC]", "(laughs)", "♪♪"), or the
+   model rated it as probably not speech (no-speech probability above 0.6) while also being
+   unsure of the words (average log-probability below -1). Both are required because a
+   confidently decoded line with a high no-speech probability is usually speech over music.
+4. **Repeated**: the segment's text equals the previous segment's. The first line of such a run
+   is kept, so a chorus sung twice still counts once.
+
+The filter is applied again whenever an escalation window adds segments, after sorting all
+segments by time, so a line repeated across the boundary of two windows is caught too
+(`mi_transcribe::add_window`).
 
 ## Matching: signals
 

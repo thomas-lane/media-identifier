@@ -33,6 +33,21 @@ Many chapter matches show that the play-all has one chapter per title.
 **Window**: a time range of a file that is transcribed. A file of six minutes or less is one
 window covering the whole file.
 
+**Escalation**: transcribing more windows of a file after matching left it with a low margin.
+
+**Segment**: one piece of recognised text with its start and end time in the file, as whisper.cpp
+returns it; usually a sentence or a line of a song.
+
+**Invented text** (hallucination): text the speech model writes although nobody said it, typically
+over music or silence ("Thank you.", "Subtitles by ..."). Segments judged to be invented are
+marked and left out of matching but still shown.
+
+**Voice activity detection (VAD)**: finding the parts of the audio that contain speech, so only
+those are decoded. Used for files longer than six minutes that are not music-heavy.
+
+**Compression ratio**: the length of a segment's text divided by its length after zlib
+compression. Text that repeats itself compresses well, so a high ratio marks looping output.
+
 ## Sources
 
 <!-- owner: sources module -->

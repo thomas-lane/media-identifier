@@ -1798,6 +1798,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
+
+[[package]]
 name = "html5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2598,7 +2604,10 @@ dependencies = [
 name = "mi-transcribe"
 version = "0.1.0"
 dependencies = [
+ "flate2",
+ "futures-util",
  "hex",
+ "hound",
  "mi-types",
  "reqwest",
  "sha2 0.11.0",
@@ -2606,6 +2615,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "whisper-rs",
 ]
 
@@ -5584,6 +5594,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2088172d00f936c348d6a72f488dc2660ab3f507263a195df308a3c2383229f6"
 dependencies = [
  "libc",
+ "tracing",
  "whisper-rs-sys",
 ]
 

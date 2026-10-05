@@ -73,10 +73,43 @@ both.
 <!-- owner: match module -->
 
 **Signal**: one independent comparison between a file and an episode (dialogue, title hook,
-length, disc order), scored from 0 to 1.
+length, disc order), scored from 0 to 1. A signal that cannot be measured is left out of the
+combined score, not counted as 0.
+
+**Heard text**: what matching compares with reference texts: the dialogue of a file's embedded
+text subtitles when it has them, otherwise its transcript.
+
+**Content word**: a heard word other than a common function word ("the", "and") or a sung or
+hesitation sound ("la", "oh", "mm"). Dialogue is measured only when at least eight were heard.
+
+**Phonetic code**: the Double Metaphone code of a word, a short string of its consonant sounds;
+words that sound alike ("there", "their") share one.
+
+**Phrase coverage**: the share of heard six-word phrases that occur, allowing misspellings, in an
+episode's reference text, weighted by how specific each phrase's words are.
 
 **Title hook**: the episode title occurring in what was heard.
 
+**No episode option**: the choice of leaving a file unmatched, scored 0.25; a file is an extra
+when it wins.
+
+**Runner-up**: a file's best option other than the assigned one: another episode or the
+no episode option, whichever scores higher.
+
 **Margin**: the score of a file's assigned option minus the score of its runner-up.
 
-**Confident / Check**: a suggestion whose margin is at least / below the confidence threshold.
+**Confident / Check**: a suggestion whose margin is at least / below the confidence threshold
+(0.15). A suggestion without dialogue or title support is Check whatever its margin.
+
+**Fingerprint**: a compact description of audio, per 32 ms, of how the energy in 24 pitch bands
+changed; it is the same for different encodes of the same audio.
+
+**Alignment strength**: how well a file's fingerprint matches the play-all at its best offset,
+from 0 (unrelated) to 1 (identical). Below 0.35 the file counts as not found in the play-all.
+
+**Disc order**: the order of the files located inside the play-all. It is *trustworthy* when
+enough files were located without overlaps and they start at the play-all's chapters, and
+*used* when it also agrees with the anchors.
+
+**Anchor**: a file found in the play-all that the dialogue, title and length alone identify
+with a confident margin; anchors check the disc order and place the files between them.

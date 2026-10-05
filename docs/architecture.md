@@ -37,12 +37,13 @@ free of I/O so it can be tested with plain data.
    lyrics, embedded text streams, summaries; all cached. Extra local sources (for example
    `mi_sources::local::LocalReferences`) are added with `Sources::add_reference_provider`.
 5. **Disc order** (`mi_media::stream_audio`, `mi_match::align`): fingerprint each file and the
-   play-all, locate each file inside the play-all, and decide whether that order is trustworthy.
+   play-all (`FingerprintBuilder` takes the audio in chunks), locate each file inside the
+   play-all, and decide whether that order is trustworthy.
 6. **Listening** (`mi_transcribe`): choose windows, decode them to 16 kHz mono PCM, transcribe,
    filter invented text.
 7. **Matching** (`mi_match::match_files`): score every file against every episode, choose the best
-   overall assignment, classify each file as Confident, Check or Extra. Files with a low margin get
-   more windows transcribed and are matched again.
+   overall assignment, classify each file as Confident, Check or Extra. Files with a low margin
+   (`mi_match::needs_more_listening`) get more windows transcribed and are matched again.
 8. **Review and save** (`mi_rename`): the user approves; files are renamed in place (journaled for
    undo), copied, or exported as CSV.
 

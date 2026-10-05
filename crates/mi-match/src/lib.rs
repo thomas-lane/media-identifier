@@ -4,17 +4,20 @@
 //! best overall assignment wins. Speech recognition will mishear words, so no signal requires an
 //! exact match: text similarity is fuzzy at the word, sound-alike and character level.
 //!
+//! - [`normalize`]: lower-casing, punctuation, numbers spelled as words.
 //! - [`text`]: TF-IDF cosine over word n-grams, phonetic shingles (Double Metaphone), and fuzzy
-//!   partial matching.
+//!   phrase matching; the summary fallback.
 //! - [`title_hook`]: the episode title occurring inside the transcript.
 //! - [`duration`]: file length against listed runtime.
 //! - [`align`]: locating each short file inside the play-all by audio, and deriving disc order.
 //! - [`assign`]: order-preserving dynamic programming when disc order is trustworthy, otherwise
 //!   Hungarian assignment with "no episode" columns.
-//! - [`confidence`]: margin over the runner-up and the resulting verdict.
+//! - [`confidence`]: margin over the runner-up, the resulting verdict, and which files need more
+//!   listening.
 //! - [`matcher`]: the entry point, [`match_files`].
 //!
-//! How and why it works is explained in `docs/identification.md`.
+//! The crate does no I/O: audio arrives as PCM samples and text as strings. How and why it works
+//! is explained in `docs/identification.md`.
 //!
 //! Owner: match module (see `docs/architecture.md`).
 
@@ -23,14 +26,21 @@ pub mod assign;
 pub mod confidence;
 pub mod duration;
 pub mod matcher;
+pub mod normalize;
+mod quote;
+#[cfg(test)]
+mod testutil;
 pub mod text;
 pub mod title_hook;
 
-pub use align::{Alignment, DiscOrder, Fingerprint, derive_disc_order, locate};
-pub use confidence::classify;
+pub use align::{
+    Alignment, DiscOrder, DiscOrderProblem, Fingerprint, FingerprintBuilder, MIN_ALIGNMENT_SCORE,
+    derive_disc_order, locate,
+};
+pub use confidence::{classify, needs_more_listening};
 pub use matcher::{
-    EpisodeInput, FileInput, MatchConfig, MatchInput, ScoreMatrix, SignalWeights, match_files,
-    score_all,
+    DiscOrderUse, EpisodeInput, FileInput, MatchConfig, MatchInput, MatchOutcome, ScoreMatrix,
+    SignalWeights, match_files, match_with_outcome, score_all,
 };
 
 /// Errors from this crate.

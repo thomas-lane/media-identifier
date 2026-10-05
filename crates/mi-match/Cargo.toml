@@ -15,6 +15,7 @@ tracing.workspace = true
 rapidfuzz.workspace = true
 rphonetic.workspace = true
 pathfinding.workspace = true
+rustfft = "6.4"
 
 
 [lints]

@@ -14,16 +14,80 @@ described in [sources.md](sources.md).
 
 <!-- owner: media module -->
 
-A scan lists the video files in the chosen folder (`mkv`, `mp4`, `m4v`, `mov`, `avi`, `ts`,
-`m2ts`, `mts`, `mpg`, `mpeg`, `vob`), probes each with ffprobe for duration, streams and
-chapters, and classifies it as a candidate, the play-all, or ignored (unreadable, no audio, or
-shorter than 20 seconds, such as menus and logos).
+A scan (`mi_media::scan_folder`) lists the video files in the chosen folder by extension (`mkv`,
+`mp4`, `m4v`, `mov`, `avi`, `ts`, `m2ts`, `mts`, `mpg`, `mpeg`, `vob`, in any case). Subfolders
+are included only when the scan is asked to be recursive. Names starting with `.` are skipped:
+besides hidden files, these are the `._title_t00.mkv` files macOS writes on network shares,
+which have a video extension but contain only file metadata.
 
-The play-all is the longest file when its duration is within 25% of the sum of the other files
-and at least three times the next longest file. Its chapters usually mark where each short title
-begins. When the play-all has more chapters than candidates were found, the scan warns that
-titles are probably missing: MakeMKV skips titles shorter than its minimum length (120 seconds
-by default), which drops short episodes such as two-minute songs.
+Each file is probed with ffprobe for its duration, audio streams, subtitle streams and chapters,
+four files at a time because probing a network share mostly waits on the network. The file then
+gets one of three roles:
+
+| Role | When |
+|---|---|
+| Ignored, with an "unreadable" warning | ffprobe fails or reports no duration |
+| Ignored, with a "no audio" warning | the file has no audio stream, so there is nothing to listen to |
+| Ignored, silently | shorter than 20 seconds, such as menus and logos |
+| Candidate | everything else |
+
+**Disc folders.** A folder copied straight from a disc (`VIDEO_TS` for DVD, `BDMV` for Blu-ray,
+recognised by its name or by its `VIDEO_TS.IFO` or `index.bdmv` file) is reported with a warning
+and its files are not listed. On a disc, one title is split across several 1 GB `.VOB` files,
+and one `.VOB` file can hold parts of several titles, so these files do not correspond to
+episodes. Ripping the disc with MakeMKV first produces one file per title.
+
+**The play-all.** Among the candidates, the longest file is compared with all the others
+together. Three measurements decide whether it is the play-all:
+
+- *Duration fit*: its duration is within 25% of the sum of the other candidates. Rips trim a few
+  seconds from each title and some titles may be missing, so an exact sum is not expected.
+- *Chapter fit*: at least half of the other candidates (and at least two) have the length of one
+  of its chapters, within 2 seconds or 1% of the file's length, each chapter matched to at most
+  one file. A play-all usually has one chapter per title, so its chapter lengths are the titles'
+  lengths.
+- *Ratio*: its duration divided by the next longest file's.
+
+The longest file is the play-all when the ratio is at least 3 and either fit holds, or when the
+ratio is at least 1.5 and both fits hold. The ratio keeps a double-length episode among normal
+episodes from being taken for a play-all; with both fits, a lower ratio is accepted so that a
+disc of two or three episodes still has its play-all found. A play-all whose chapters fit but
+whose duration does not is accepted because MakeMKV may have dropped many short titles, leaving
+the play-all much longer than the files found. A play-all needs at least two other candidates.
+
+The play-all gets a confidence from 0 to 1 and a plain-language reason that the Confirm show
+screen can display. With `d` = 1 minus the duration difference divided by the allowed 25%
+(clamped to 0..1) and `c` = the fraction of candidates matching a chapter, the confidence is
+`0.6 × max(d, c) + 0.4 × min(d, c)`; without chapters it is `0.7 × d`, because duration alone
+is weaker evidence. These durations only nominate the play-all. Whether its order can be trusted
+is decided later by audio alignment (see "Matching: the play-all as an answer key").
+
+**Missing short titles.** When the play-all has more chapters than there are candidates, and at
+least half of the candidates match a chapter, the scan warns that titles are probably missing:
+MakeMKV skips titles shorter than its minimum length (120 seconds by default), which drops short
+episodes such as two-minute songs. The second condition checks that the chapters mark one title
+each; a play-all with several chapters per episode always has more chapters than episodes, and
+would otherwise always raise the warning.
+
+**Show name guess.** The folder name becomes the initial search text: it is split into words at
+spaces, `_` and `.`; disc and rip markers are removed (`D1`, `Disc 2`, `S03`, `Season 3`, `S1D2`,
+`DVD`, `BD`, `Blu-ray`, a bracketed year such as `(1973)`); and an all-capitals disc label is
+changed to title case, so `SCHOOLHOUSE_ROCK_D1` becomes "Schoolhouse Rock". When nothing is left,
+as for a folder named `Season 2`, the parent folder is used.
+
+**Audio for listening and alignment.** `mi_media::extract_audio` and `stream_audio` decode one
+audio stream to 16 kHz mono 32-bit float samples, the format whisper.cpp expects; every channel,
+surround included, is mixed down to mono. When the caller does not name a stream, the file is
+probed and the stream chosen in this order: one in the requested language (two-letter codes such
+as `en` match the three-letter `eng` that containers use), then the one the file marks as default,
+then the first. A time window
+is decoded by seeking before opening the input, so ffmpeg jumps straight to the window through
+the file's index instead of decoding everything before it, and still starts at the exact time
+asked for.
+
+**Embedded subtitles.** A text subtitle stream (SubRip, ASS/SSA, WebVTT, MP4 text) is converted
+by ffmpeg to SubRip and then to dialogue lines by `mi-sources`. DVD and Blu-ray subtitles are
+pictures of text, which would need character recognition, so they are not used.
 
 ## Listening
 

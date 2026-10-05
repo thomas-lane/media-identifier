@@ -6,6 +6,7 @@ export type { AudioStream } from "./AudioStream";
 export type { Candidate } from "./Candidate";
 export type { Chapter } from "./Chapter";
 export type { Confidence } from "./Confidence";
+export type { DiscFolderFormat } from "./DiscFolderFormat";
 export type { Episode } from "./Episode";
 export type { EpisodeKey } from "./EpisodeKey";
 export type { EpisodeOrdering } from "./EpisodeOrdering";

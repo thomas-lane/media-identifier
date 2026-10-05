@@ -20,4 +20,18 @@ chapterCount: number,
 /**
  * Sum of the candidate files' durations in seconds, for comparison with `duration_s`.
  */
-candidatesTotalS: number, };
+candidatesTotalS: number, 
+/**
+ * How many candidate files have the same length as one of the play-all's chapters (each
+ * chapter counted once). A high count means the chapters mark one title each.
+ */
+chaptersMatched: number, 
+/**
+ * How sure the scan is that this file is a play-all, from 0 to 1, combining how closely its
+ * duration equals `candidates_total_s` and how many chapters line up with candidate files.
+ */
+confidence: number, 
+/**
+ * Plain-language explanation of the decision, for display and logs.
+ */
+reason: string, };

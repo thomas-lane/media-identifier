@@ -15,6 +15,17 @@ where they are.
 
 **Sidecar**: a helper executable shipped next to the app (ffmpeg and ffprobe).
 
+## Scanning
+
+<!-- owner: media module -->
+
+**Chapter match**: a candidate file whose length equals the length of one of the play-all's
+chapters, within 2 seconds or 1% of the file's length. Each chapter matches at most one file.
+Many chapter matches show that the play-all has one chapter per title.
+
+**Disc structure folder**: a folder copied from a disc as it is, `VIDEO_TS` (DVD) or `BDMV`
+(Blu-ray), rather than ripped into one file per title. The scan reports it and skips its files.
+
 ## Listening
 
 <!-- owner: transcribe module -->

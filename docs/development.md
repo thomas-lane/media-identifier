@@ -48,7 +48,7 @@ scripts/build-ffmpeg.sh --check-notice     # third_party/ffmpeg/NOTICE.md matche
 
 The build is minimal on purpose. `--disable-everything` and an explicit list of demuxers, decoders,
 parsers, filters, encoders and muxers (the components in
-[architecture.md](architecture.md#helper-executables)) keep each program around 3.5 MB.
+[architecture.md](architecture.md#helper-executables)) keep each program between 3 and 4.5 MB.
 Leaving out `--enable-gpl` and `--enable-nonfree` keeps it under the LGPL, which the app's MIT
 license can ship alongside. `--disable-autodetect` keeps libraries that happen to be installed on
 the build computer out of the programs, so they link only operating system libraries and run on

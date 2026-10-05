@@ -16,21 +16,25 @@ sha2.workspace = true
 hex.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
+flate2 = "1.1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 
 # whisper.cpp through whisper-rs: Metal on macOS, CPU on Windows. The `vulkan` feature of this
 # crate adds Vulkan on Windows when it builds reliably in CI.
 [target.'cfg(target_os = "macos")'.dependencies]
-whisper-rs = { workspace = true, features = ["metal"] }
+whisper-rs = { workspace = true, features = ["metal", "tracing_backend"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-whisper-rs = { workspace = true }
+whisper-rs = { workspace = true, features = ["tracing_backend"] }
 
 [features]
 vulkan = ["whisper-rs/vulkan"]
 
 [dev-dependencies]
 tempfile.workspace = true
+hound = "3.5"
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

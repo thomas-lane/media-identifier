@@ -1,0 +1,26 @@
+[package]
+name = "mi-sources"
+description = "Episode lists (TVmaze, TMDb), reference text (SubDL, LRCLIB, embedded subtitles) and the SQLite cache."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+mi-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+rusqlite.workspace = true
+
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,36 @@
+[package]
+name = "mi-transcribe"
+description = "Speech model catalog and download, whisper.cpp wrapper, sampling windows and hallucination filter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+mi-types.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sha2.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+
+
+# whisper.cpp through whisper-rs: Metal on macOS, CPU on Windows. The `vulkan` feature of this
+# crate adds Vulkan on Windows when it builds reliably in CI.
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { workspace = true, features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = { workspace = true }
+
+[features]
+vulkan = ["whisper-rs/vulkan"]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

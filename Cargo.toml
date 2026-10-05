@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/mi-types",
+    "crates/mi-media",
+    "crates/mi-transcribe",
+    "crates/mi-sources",
+    "crates/mi-match",
+    "crates/mi-rename",
+    "crates/mi-core",
+    "src-tauri",
+]
+default-members = [
+    "crates/mi-types",
+    "crates/mi-media",
+    "crates/mi-transcribe",
+    "crates/mi-sources",
+    "crates/mi-match",
+    "crates/mi-rename",
+    "crates/mi-core",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+authors = ["Thomas Lane"]
+repository = "https://github.com/thomas-lane/media-identifier"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+mi-types = { path = "crates/mi-types" }
+mi-media = { path = "crates/mi-media" }
+mi-transcribe = { path = "crates/mi-transcribe" }
+mi-sources = { path = "crates/mi-sources" }
+mi-match = { path = "crates/mi-match" }
+mi-rename = { path = "crates/mi-rename" }
+mi-core = { path = "crates/mi-core" }
+
+# Shared third-party crates (versions chosen and checked 2026-10-05)
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "process", "io-util"] }
+ts-rs = { version = "12.0.1", features = ["serde-compat", "no-serde-warnings"] }
+reqwest = { version = "0.13", features = ["json", "stream", "query", "gzip"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.11"
+hex = "0.4"
+rapidfuzz = "0.5"
+pathfinding = "4.16"
+rphonetic = "4.0"
+csv = "1.4"
+tempfile = "3.23"
+whisper-rs = { version = "0.16", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

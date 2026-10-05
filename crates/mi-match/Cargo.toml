@@ -1,0 +1,21 @@
+[package]
+name = "mi-match"
+description = "Scoring files against episodes and choosing the best overall assignment."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+mi-types.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rapidfuzz.workspace = true
+rphonetic.workspace = true
+pathfinding.workspace = true
+
+
+[lints]
+workspace = true

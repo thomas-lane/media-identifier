@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Media Identifier",
+  "identifier": "com.thomaslane.mediaidentifier",
+  "build": {
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../ui" },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../ui" },
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Media Identifier",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 860,
+        "minHeight": 580,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis"],
+    "createUpdaterArtifacts": true,
+    "publisher": "Thomas Lane",
+    "copyright": "Copyright (c) 2026 Thomas Lane. MIT License.",
+    "category": "Utility",
+    "shortDescription": "Identify and rename TV episode files",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5NjI0RjhFRkM0MTk2Q0YKUldUUGxrSDhqazlpdWR5ZmxwOHc2dnJkL0VNdm81Z254QzBZSDR1bkV2OHZKbmRrS29PcE0wNEoK",
+      "endpoints": [
+        "https://github.com/thomas-lane/media-identifier/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" }
+    }
+  }
+}

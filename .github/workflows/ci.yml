@@ -1,0 +1,59 @@
+# Checks every push and pull request on the two supported platforms.
+# Owner: release module.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: UI lint
+        run: npm run lint
+        working-directory: ui
+
+      - name: UI tests
+        run: npm test
+        working-directory: ui
+
+      - name: UI build
+        run: npm run build
+        working-directory: ui

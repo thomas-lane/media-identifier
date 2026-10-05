@@ -29,6 +29,17 @@ pub enum CoreError {
     /// Cancelled.
     #[error("cancelled")]
     Cancelled,
+    /// A request the engine cannot carry out as given (for example a folder with nothing to
+    /// identify, or a rename plan that does not belong to the job); the message is for the user.
+    #[error("{0}")]
+    Invalid(String),
+    /// A job could not continue for a reason other than the crates' own errors; the message is
+    /// for the user.
+    #[error("{0}")]
+    Job(String),
+    /// Reading or writing the app's own files failed.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl From<CoreError> for ApiError {
@@ -39,6 +50,9 @@ impl From<CoreError> for ApiError {
         let code = match &error {
             CoreError::Busy => ErrorCode::Busy,
             CoreError::NotFound(_) => ErrorCode::NotFound,
+            CoreError::Invalid(_) => ErrorCode::InvalidInput,
+            CoreError::Job(_) => ErrorCode::Internal,
+            CoreError::Io(_) => ErrorCode::Io,
             CoreError::Cancelled
             | CoreError::Media(M::Cancelled)
             | CoreError::Transcribe(T::Cancelled)
@@ -57,7 +71,9 @@ impl From<CoreError> for ApiError {
             CoreError::Match(_) => ErrorCode::Internal,
             CoreError::Rename(mi_rename::RenameError::Conflicts(_)) => ErrorCode::Conflict,
             CoreError::Rename(mi_rename::RenameError::NotFound(_)) => ErrorCode::NotFound,
-            CoreError::Rename(mi_rename::RenameError::BadTemplate(_)) => ErrorCode::InvalidInput,
+            CoreError::Rename(
+                mi_rename::RenameError::BadTemplate(_) | mi_rename::RenameError::UnknownEpisode(_),
+            ) => ErrorCode::InvalidInput,
             CoreError::Rename(_) => ErrorCode::Io,
         };
         ApiError::new(code, error.to_string())

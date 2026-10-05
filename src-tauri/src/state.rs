@@ -39,6 +39,7 @@ impl AppState {
                 },
                 settings: settings.settings(),
                 keys: settings.api_keys(),
+                runtime: tauri::async_runtime::handle().inner().clone(),
             },
             Arc::new(TauriSink::new(app.clone())),
         )?;

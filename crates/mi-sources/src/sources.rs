@@ -50,13 +50,14 @@ impl std::fmt::Debug for ApiKeys {
 
 /// All online sources behind one cache.
 ///
-/// Thread-safe (`Send + Sync`); methods take `&self` except [`Sources::set_keys`] and
-/// [`Sources::add_reference_provider`].
+/// Thread-safe (`Send + Sync`); methods take `&self` except
+/// [`Sources::add_reference_provider`]. Keys can be replaced while requests run; a request uses
+/// the keys current when it started.
 #[derive(Debug)]
 pub struct Sources {
     http: HttpClient,
     cache: Arc<Cache>,
-    keys: ApiKeys,
+    keys: std::sync::RwLock<ApiKeys>,
     extra: Vec<Arc<dyn ReferenceProvider>>,
 }
 
@@ -66,20 +67,30 @@ impl Sources {
         Self {
             http,
             cache: Arc::new(cache),
-            keys,
+            keys: std::sync::RwLock::new(keys),
             extra: Vec::new(),
         }
     }
 
     /// Replaces the API keys (after the user edits them in Settings). The recorded outcome of a
     /// provider whose key changed is forgotten, so a rejected key stops showing as rejected.
-    pub fn set_keys(&mut self, keys: ApiKeys) {
+    pub fn set_keys(&self, keys: ApiKeys) {
+        let mut current = self.keys.write().unwrap_or_else(|p| p.into_inner());
         for provider in [ProviderId::Subdl, ProviderId::Tmdb] {
-            if self.keys.get(provider) != keys.get(provider) {
+            if current.get(provider) != keys.get(provider) {
                 self.http.reset_outcome(provider);
             }
         }
-        self.keys = keys;
+        *current = keys;
+    }
+
+    /// The key currently set for `provider`, trimmed; `None` when unset or blank.
+    fn key(&self, provider: ProviderId) -> Option<String> {
+        self.keys
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(provider)
+            .map(str::to_owned)
     }
 
     /// Adds a reference-text source tried before the online ones, for example
@@ -100,9 +111,8 @@ impl Sources {
 
     /// The TMDb provider, when a TMDb key is set.
     pub fn tmdb(&self) -> Option<Tmdb> {
-        self.keys
-            .get(ProviderId::Tmdb)
-            .map(|key| Tmdb::new(self.http.clone(), Arc::clone(&self.cache), key.to_owned()))
+        self.key(ProviderId::Tmdb)
+            .map(|key| Tmdb::new(self.http.clone(), Arc::clone(&self.cache), key))
     }
 
     /// Searches TVmaze for shows matching `query`, best first.
@@ -247,11 +257,11 @@ impl Sources {
         };
 
         let mut providers: Vec<Arc<dyn ReferenceProvider>> = self.extra.clone();
-        if let Some(key) = self.keys.get(ProviderId::Subdl) {
+        if let Some(key) = self.key(ProviderId::Subdl) {
             providers.push(Arc::new(Subdl::new(
                 self.http.clone(),
                 Arc::clone(&self.cache),
-                key.to_owned(),
+                key,
             )));
         }
         providers.push(Arc::new(Lrclib::new(
@@ -396,7 +406,7 @@ impl Sources {
         .into_iter()
         .map(|provider| {
             let needs_key = matches!(provider, ProviderId::Subdl | ProviderId::Tmdb);
-            let has_key = self.keys.get(provider).is_some();
+            let has_key = self.key(provider).is_some();
             let state = if needs_key && !has_key {
                 SourceState::NeedsKey
             } else {

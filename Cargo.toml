@@ -70,3 +70,11 @@ all = { level = "warn", priority = -1 }
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# Audio fingerprinting is about 50 times slower unoptimised; keep it usable in `tauri dev` and in
+# debug test runs.
+[profile.dev.package.rustfft]
+opt-level = 3
+
+[profile.dev.package.mi-match]
+opt-level = 2

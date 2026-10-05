@@ -2543,15 +2543,20 @@ dependencies = [
 name = "mi-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "mi-match",
  "mi-media",
  "mi-rename",
  "mi-sources",
  "mi-transcribe",
  "mi-types",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

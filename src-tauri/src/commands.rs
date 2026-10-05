@@ -56,9 +56,16 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
     state.settings.settings()
 }
 
-/// Saves settings and applies them to the engine.
+/// Saves settings and applies them to the engine. The two fields the updater maintains (time of
+/// the last check, skipped version) keep their stored values: the window's copy may be stale.
 #[tauri::command]
 pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), ApiError> {
+    let stored = state.settings.settings();
+    let settings = Settings {
+        last_update_check_ms: stored.last_update_check_ms,
+        skipped_update_version: stored.skipped_update_version,
+        ..settings
+    };
     state.settings.save(settings.clone()).map_err(io_error)?;
     state
         .engine
@@ -169,13 +176,13 @@ pub fn plan_rename(
     state.engine.plan_rename(&request).map_err(ApiError::from)
 }
 
-/// Applies a rename plan.
+/// Applies a rename plan (on a background thread: copies can take a while).
 #[tauri::command]
-pub fn apply_rename(
+pub async fn apply_rename(
     state: State<'_, AppState>,
     plan: RenamePlan,
 ) -> Result<RenameOutcome, ApiError> {
-    state.engine.apply_rename(&plan).map_err(ApiError::from)
+    state.engine.apply_rename(plan).await.map_err(ApiError::from)
 }
 
 /// History entries.
@@ -186,8 +193,11 @@ pub fn list_history(state: State<'_, AppState>) -> Result<Vec<HistoryEntry>, Api
 
 /// Undoes a History entry.
 #[tauri::command]
-pub fn undo_history(state: State<'_, AppState>, id: HistoryId) -> Result<UndoOutcome, ApiError> {
-    state.engine.undo(&id).map_err(ApiError::from)
+pub async fn undo_history(
+    state: State<'_, AppState>,
+    id: HistoryId,
+) -> Result<UndoOutcome, ApiError> {
+    state.engine.undo(&id).await.map_err(ApiError::from)
 }
 
 #[cfg(test)]

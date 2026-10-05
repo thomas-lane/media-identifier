@@ -38,6 +38,7 @@ fn export_all(cfg: &Config) {
         Episode,
         TextKind,
         ReferenceText,
+        Attribution,
         // transcripts
         SpeechModel,
         SampleWindow,

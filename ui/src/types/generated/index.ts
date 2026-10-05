@@ -2,6 +2,7 @@
 export type { Accelerator } from "./Accelerator";
 export type { ApiError } from "./ApiError";
 export type { ApiKeyProvider } from "./ApiKeyProvider";
+export type { Attribution } from "./Attribution";
 export type { AudioStream } from "./AudioStream";
 export type { Candidate } from "./Candidate";
 export type { Chapter } from "./Chapter";

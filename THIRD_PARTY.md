@@ -42,7 +42,14 @@ Direct dependencies and their licenses. Each module records its own dependencies
 |---|---|---|
 | reqwest | MIT OR Apache-2.0 | HTTP |
 | rusqlite (bundled SQLite) | MIT (SQLite: public domain) | cache |
-| TVmaze data | CC BY-SA 4.0 | episode lists (credited in the app) |
+| async-trait | MIT OR Apache-2.0 | provider traits with async methods |
+| encoding_rs | (Apache-2.0 OR MIT) AND BSD-3-Clause | reading UTF-16 and Windows-1252 subtitle files |
+| httpdate | MIT OR Apache-2.0 | `Retry-After` dates |
+| zip (deflate through flate2 and zlib-rs: MIT OR Apache-2.0, Zlib) | MIT | SubDL subtitle archives |
+| TVmaze data | CC BY-SA 4.0 | episode lists (credited in the app); recorded test fixtures |
+| TMDb data (user's own key) | TMDb API terms | optional episode numbering (notice shown in the app) |
+| SubDL subtitles (user's own key) | SubDL terms; subtitle rights belong to their authors | reference text, cached locally |
+| LRCLIB lyrics | rights belong to their holders | reference text, cached locally; test fixtures keep two-line excerpts |
 
 ## match
 

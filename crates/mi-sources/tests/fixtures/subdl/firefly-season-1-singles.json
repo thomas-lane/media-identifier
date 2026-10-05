@@ -1,0 +1,41 @@
+{
+  "status": true,
+  "results": [
+    {"imdb_id": "tt0303461", "tmdb_id": 1437, "type": "tv", "name": "Firefly", "sd_id": 900001, "first_air_date": "2002-09-20", "year": 2002}
+  ],
+  "subtitles": [
+    {
+      "release_name": "Firefly.S01E03.HI",
+      "name": "Firefly.S01E03.HI.zip",
+      "url": "/subtitle/900001-301.zip",
+      "season": 1,
+      "episode": 3,
+      "full_season": false,
+      "hi": true,
+      "unpack_files": [
+        {"file_n_id": "c3", "name": "Firefly.S01E03.HI.srt", "season": 1, "episode": 3, "language": "EN", "hi": true, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-301/c3"}
+      ]
+    },
+    {
+      "release_name": "Firefly.S01E03",
+      "name": "Firefly.S01E03.zip",
+      "url": "/subtitle/900001-302.zip",
+      "season": 1,
+      "episode": 3,
+      "full_season": false,
+      "hi": false,
+      "unpack_files": [
+        {"file_n_id": "d3", "name": "Firefly.S01E03.srt", "season": 1, "episode": 3, "language": "EN", "hi": false, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-302/d3"}
+      ]
+    },
+    {
+      "release_name": "Firefly.S01E04",
+      "name": "Firefly.S01E04.zip",
+      "url": "/subtitle/900001-304.zip",
+      "season": 1,
+      "episode": 4,
+      "full_season": false,
+      "hi": false
+    }
+  ]
+}

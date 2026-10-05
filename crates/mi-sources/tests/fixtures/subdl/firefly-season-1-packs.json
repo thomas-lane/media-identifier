@@ -1,0 +1,38 @@
+{
+  "status": true,
+  "results": [
+    {"imdb_id": "tt0303461", "tmdb_id": 1437, "type": "tv", "name": "Firefly", "sd_id": 900001, "first_air_date": "2002-09-20", "year": 2002}
+  ],
+  "subtitles": [
+    {
+      "release_name": "Firefly.S01.Partial.Pack",
+      "name": "Firefly.S01.Partial.zip",
+      "url": "/subtitle/900001-111.zip",
+      "season": 1,
+      "episode": 1,
+      "episode_from": 1,
+      "episode_end": 2,
+      "full_season": true,
+      "hi": false,
+      "unpack_files": [
+        {"file_n_id": "a1", "name": "Firefly.S01E01.srt", "release_name": "Firefly.S01E01", "season": 1, "episode": 1, "language": "EN", "hi": false, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-111/a1"}
+      ]
+    },
+    {
+      "release_name": "Firefly.S01.Complete.DVDRip",
+      "name": "Firefly.S01.Complete.zip",
+      "url": "/subtitle/900001-222.zip",
+      "season": 1,
+      "episode": 1,
+      "episode_from": 1,
+      "episode_end": 14,
+      "full_season": true,
+      "hi": false,
+      "unpack_files": [
+        {"file_n_id": "b1", "name": "Firefly - 1x01 - The Train Job.srt", "release_name": "Firefly", "season": 1, "episode": 1, "language": "EN", "hi": false, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-222/b1"},
+        {"file_n_id": "b2", "name": "Disc 1/Episode 2.srt", "release_name": "Firefly", "season": 1, "episode": 2, "language": "EN", "hi": false, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-222/b2"},
+        {"file_n_id": "b11", "name": "Firefly.S01E11.Serenity.srt", "release_name": "Firefly", "season": 1, "episode": 11, "language": "EN", "hi": false, "format": "srt", "size": 100, "md5": "x", "url": "/subtitle/900001-222/b11"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "id": 1437,
+  "results": [
+    {"description": "", "episode_count": 14, "group_count": 1, "id": "5b11c5520e0a265f9b000002", "name": "Production order", "network": null, "type": 6},
+    {"description": "Episodes in the order of the DVD box set", "episode_count": 4, "group_count": 2, "id": "5b11c5520e0a265f9b000001", "name": "DVD Order", "network": null, "type": 3}
+  ]
+}

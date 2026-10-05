@@ -53,7 +53,20 @@ compression. Text that repeats itself compresses well, so a high ratio marks loo
 <!-- owner: sources module -->
 
 **Reference text**: text known to belong to an episode (subtitles, lyrics, or its summary),
-normalised to plain dialogue lines.
+normalised to plain dialogue lines. Text from a file's own embedded subtitle stream is not
+reference text: it describes that file, not an episode.
+
+**Dialogue text**: reference text that quotes the episode (subtitles or lyrics), as opposed to a
+summary, which only describes it.
+
+**Season pack**: one subtitle archive covering many or all episodes of a season, downloaded once.
+
+**Aired order / DVD order**: two numberings of the same episodes. Aired order is the broadcast
+numbering (TVmaze's main list, TMDb's default); DVD order is the order on the disc set (a TVmaze
+alternate list or TMDb episode group of type DVD). An episode keeps its provider episode id in
+both.
+
+**Provider**: an online service or local origin of data, named by `mi_types::ProviderId`.
 
 ## Matching
 

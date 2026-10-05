@@ -17,6 +17,9 @@ pub enum ProviderId {
     Lrclib,
     /// A text subtitle stream inside the file being identified.
     Embedded,
+    /// Subtitle or lyrics files in a local folder the user or a test supplies
+    /// (`mi_sources::local::LocalReferences`).
+    Local,
 }
 
 /// A show as one provider identifies it.
@@ -102,4 +105,20 @@ pub struct Episode {
     pub summary: Option<String>,
     /// The provider's own episode id, stable across orderings.
     pub provider_episode_id: String,
+}
+
+/// The credit a source requires when its data is shown, for the UI's credits line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Attribution {
+    /// The source credited.
+    pub provider: ProviderId,
+    /// The sentence to show, for example `Episode lists from TVmaze`.
+    pub text: String,
+    /// Link to the source's site, opened when the credit is clicked.
+    pub url: String,
+    /// License of the data, when the source states one (for example `CC BY-SA 4.0`).
+    pub license: Option<String>,
+    /// Link to the license text, when `license` is set.
+    pub license_url: Option<String>,
 }

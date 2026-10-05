@@ -3,4 +3,4 @@
 /**
  * An online source the app talks to, or the file itself.
  */
-export type ProviderId = "tvmaze" | "tmdb" | "subdl" | "lrclib" | "embedded";
+export type ProviderId = "tvmaze" | "tmdb" | "subdl" | "lrclib" | "embedded" | "local";

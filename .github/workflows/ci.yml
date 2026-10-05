@@ -1,5 +1,5 @@
-# Checks every push and pull request on the two supported platforms.
-# Owner: release module.
+# Checks every push to main and every pull request on the two supported platforms.
+# Owner: release module. What it checks: docs/development.md, "Build and test".
 name: CI
 
 on:
@@ -7,19 +7,23 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
+    name: Check (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -27,7 +31,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -36,15 +40,6 @@ jobs:
       - name: Install UI dependencies
         run: npm ci
         working-directory: ui
-
-      - name: Rust format
-        run: cargo fmt --all -- --check
-
-      - name: Rust lints
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Rust tests
-        run: cargo test --workspace
 
       - name: UI lint
         run: npm run lint
@@ -57,3 +52,26 @@ jobs:
       - name: UI build
         run: npm run build
         working-directory: ui
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+  workflows:
+    name: Workflows and notices
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint workflow files
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
+      - name: The ffmpeg notice matches the build script
+        run: scripts/build-ffmpeg.sh --check-notice

@@ -2571,12 +2571,14 @@ name = "mi-rename"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "libc",
  "mi-types",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

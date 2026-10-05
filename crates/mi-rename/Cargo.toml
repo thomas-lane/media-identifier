@@ -16,6 +16,12 @@ thiserror.workspace = true
 tracing.workspace = true
 csv.workspace = true
 
+# No-replace renames through the operating system (see src/fsops.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.190"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tempfile.workspace = true

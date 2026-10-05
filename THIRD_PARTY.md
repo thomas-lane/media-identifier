@@ -45,9 +45,10 @@ Direct dependencies and their licenses. Each module records its own dependencies
 
 | Component | License | Used for |
 |---|---|---|
-| rapidfuzz | MIT | fuzzy partial matching |
+| rapidfuzz | MIT | character similarity (`ratio`) for fuzzy matching |
 | rphonetic | Apache-2.0 | Double Metaphone codes |
 | pathfinding | Apache-2.0 OR MIT | Kuhn-Munkres assignment |
+| rustfft | MIT OR Apache-2.0 | spectra for audio fingerprints |
 
 ## release
 

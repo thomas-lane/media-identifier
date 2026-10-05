@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a7bf0"/>
+      <stop offset="1" stop-color="#1f56b8"/>
+    </linearGradient>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <circle cx="740" cy="660" r="140" fill="#000"/>
+    </mask>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  <g transform="translate(-12 -17)" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="52">
+    <g mask="url(#cut)">
+      <rect x="200" y="290" width="520" height="360" rx="60"/>
+      <g stroke-width="46">
+        <line x1="292" y1="440" x2="292" y2="500"/>
+        <line x1="376" y1="400" x2="376" y2="540"/>
+        <line x1="460" y1="370" x2="460" y2="570"/>
+        <line x1="544" y1="400" x2="544" y2="540"/>
+        <line x1="628" y1="440" x2="628" y2="500"/>
+      </g>
+    </g>
+    <circle cx="740" cy="660" r="86"/>
+    <line x1="806" y1="726" x2="852" y2="772"/>
+  </g>
+</svg>

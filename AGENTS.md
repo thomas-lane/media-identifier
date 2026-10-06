@@ -39,9 +39,10 @@ the repository.
 
 ## Where things live
 
-Architecture, data flow and the file ownership map are in `docs/architecture.md`; how matching
-works is in `docs/identification.md`; online services are in `docs/sources.md`; terms are defined
-in `docs/glossary.md`.
+Architecture and data flow are in `docs/architecture.md`; how matching works is in
+`docs/identification.md`; naming, renaming, copying, the History journal and undo are in
+`docs/saving.md`; online services are in `docs/sources.md`; terms are defined in
+`docs/glossary.md`.
 
 | Concern | Location |
 |---|---|
@@ -73,7 +74,7 @@ crates/mi-media/tests/ffmpeg.rs       mi-media against real ffmpeg/ffprobe on fi
 crates/mi-transcribe/tests/real_model.rs  real model download and transcription of `say` speech (ignored by default)
 crates/mi-sources/tests/*.rs          providers against recorded responses; tests/live.rs calls the real services (ignored)
 crates/mi-match/tests/matching.rs     whole matching runs on a fictional show with simulated speech-recognition errors
-crates/mi-rename/tests/apply_undo.rs  rename, copy, undo and crash recovery on real temporary folders
+crates/mi-rename/tests/apply_undo.rs  rename, copy, CSV export, undo and crash recovery on real temporary folders
 crates/mi-core/tests/pipeline.rs      whole jobs through the engine with scripted media, catalog and speech
 crates/mi-core/tests/synthetic_disc.rs  real ffmpeg + Fast model on scripts/make-synthetic-disc.sh output (ignored)
 src-tauri/src/commands.rs tests       every command is registered and called by ui/src/api/tauri.ts
@@ -97,9 +98,9 @@ reported as real-world accuracy.
   SQLite (`mi_sources::Cache`); TMDb data is served from the cache for at most six months.
 - **Models are verified**: a model file exists under its final name only after its size and
   SHA-256 matched the pinned values in `mi_transcribe::catalog`; downloads resume from `.part`.
-- **The play-all and extras are never renamed**, and nothing is overwritten: every rename or copy
-  uses an operation that fails when the target exists, is journaled before it happens, and can be
-  undone from History.
+- **The play-all and extras are never renamed**, and nothing is overwritten: `apply_rename`
+  rebuilds every plan from the job's record, every rename or copy uses an operation that fails
+  when the target exists, is journaled before it happens, and can be undone from History.
 - **Disc order is evidence of order only**: an untrustworthy play-all (overlaps, shuffles, too few
   files located) is ignored, never forced.
 - **Missing signals are not zero**: a signal that cannot be measured is left out of the combined
@@ -143,6 +144,7 @@ update that file instead of repeating the information elsewhere:
 | how unsigned builds are opened on macOS and Windows | `docs/install.md` |
 | crates, module responsibilities, data flow, threading, data folders, commands/events, file ownership | `docs/architecture.md` |
 | signals, scoring, assignment, confidence, sampling, decoding settings, hallucination filtering | `docs/identification.md` |
+| naming templates, save modes, rename plans and conflicts, the History journal, undo | `docs/saving.md` |
 | an online service, its endpoints, keys, limits, terms, attribution or caching | `docs/sources.md` |
 | build, test, release, updater key, sidecar build, CI | `docs/development.md` |
 | the meaning of a term, or a new term | `docs/glossary.md` |

@@ -29,4 +29,9 @@ title: string,
 /**
  * Path of the `.srt` to write from what was heard, when requested.
  */
-heardSubtitlesTo: string | null, };
+heardSubtitlesTo: string | null, 
+/**
+ * Size of the file when it was scanned. Saving leaves a file whose size differs alone,
+ * because a different file may now have the scanned name.
+ */
+sizeBytes: number, };

@@ -6,13 +6,31 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer 
 import type { ReactNode } from "react";
 
 import { toApiError, useBackend } from "../api";
-import type { FileId, JobEvent, JobId, JobRequest, JobResults, MediaFile, ScanSummary } from "../types/generated";
+import type {
+  FileId,
+  JobEvent,
+  JobId,
+  JobRequest,
+  JobResults,
+  MediaFile,
+  RenameOutcome,
+  SaveModeKind,
+  ScanSummary,
+} from "../types/generated";
 import { withInitialReviews } from "../lib/review";
 import type { FileReview } from "../lib/review";
 import { applyJobEvent, jobFromResults, newJob } from "./job";
 import type { JobView } from "./job";
 
 export type Step = "start" | "confirm" | "identifying" | "review" | "rename";
+
+/** The result of saving this job's results, kept so the Rename screen shows it on return. */
+export interface SavedResult {
+  outcome: RenameOutcome;
+  mode: SaveModeKind;
+  /** The CSV file, for an export. */
+  csvPath: string | null;
+}
 
 export interface IdentifyState {
   step: Step;
@@ -28,6 +46,10 @@ export interface IdentifyState {
   reviews: Record<FileId, FileReview>;
   /** The file shown in the Review evidence panel. */
   selected: FileId | null;
+  /** The last save of these results in this session. */
+  saved: SavedResult | null;
+  /** The results were saved before (a job reopened from Recent). */
+  savedEarlier: boolean;
   error: string | null;
 }
 
@@ -41,7 +63,8 @@ export type IdentifyAction =
   | { type: "started"; jobId: JobId }
   | { type: "event"; event: JobEvent }
   | { type: "results"; results: JobResults }
-  | { type: "opened"; results: JobResults; scan: ScanSummary | null }
+  | { type: "opened"; results: JobResults; scan: ScanSummary | null; savedEarlier: boolean }
+  | { type: "saved"; saved: SavedResult | null }
   | { type: "review"; fileId: FileId; review: FileReview }
   | { type: "select"; fileId: FileId | null }
   | { type: "go"; step: Step }
@@ -58,6 +81,8 @@ export const initialIdentifyState: IdentifyState = {
   job: null,
   reviews: {},
   selected: null,
+  saved: null,
+  savedEarlier: false,
   error: null,
 };
 
@@ -87,6 +112,8 @@ export function identifyReducer(state: IdentifyState, action: IdentifyAction): I
         job: null,
         reviews: {},
         selected: null,
+        saved: null,
+        savedEarlier: false,
         error: null,
       };
     case "started": {
@@ -120,6 +147,7 @@ export function identifyReducer(state: IdentifyState, action: IdentifyAction): I
           step: "review",
           scan: action.scan,
           request: action.results.request,
+          savedEarlier: action.savedEarlier,
         },
         jobFromResults(action.results),
       );
@@ -127,6 +155,8 @@ export function identifyReducer(state: IdentifyState, action: IdentifyAction): I
       return { ...state, reviews: { ...state.reviews, [action.fileId]: action.review } };
     case "select":
       return { ...state, selected: action.fileId };
+    case "saved":
+      return { ...state, saved: action.saved };
     case "go":
       return { ...state, step: action.step, error: null };
     case "autoReview":
@@ -230,7 +260,9 @@ export function IdentifyProvider({ children }: { children: ReactNode }) {
         const results = await backend.jobResults(id);
         // File details (length, size) come from the folder; the results alone have ids only.
         const scan = await backend.scanFolder(results.request.folder).catch(() => null);
-        dispatch({ type: "opened", results, scan });
+        const recent = await backend.recentJobs().catch(() => []);
+        const savedEarlier = recent.some((r) => r.jobId === id && r.saved);
+        dispatch({ type: "opened", results, scan, savedEarlier });
       } catch (e) {
         dispatch({ type: "failed", message: toApiError(e).message });
       }

@@ -57,7 +57,7 @@ calls `Engine::start_job`, which runs `mi_core::pipeline::run` on the runtime. T
 8. **Review and save** (`Engine::plan_rename`, `Engine::apply_rename`, `mi_rename`): the user
    approves; files are renamed in place (journaled for undo), copied, or exported as CSV.
 
-`docs/identification.md` explains steps 5-7.
+`docs/identification.md` explains steps 5-7; `docs/saving.md` explains step 8.
 
 ## The engine and its services
 
@@ -78,9 +78,10 @@ Each job's results live in a `JobRecord` (`crates/mi-core/src/jobs.rs`): the `Jo
 shows, the scanned files and what was heard in each file. The record is filled as the job runs,
 so `job_results` returns partial results during a job, and written to
 `<app data>/jobs/<job id>.json` when the job ends, so Recent and Review work after a relaunch.
-Rename plans are built from the record, not from the window: `apply_rename` refuses a plan whose
-items are not the job's files at their scanned paths, or whose targets are not plain absolute
-paths. `crates/mi-core/examples/identify.rs` runs the same engine from the command line.
+Rename plans are built from the record, not from the window: `apply_rename` builds the plan
+again from the request it carries and refuses it when the result differs (see
+[saving](saving.md#applying)). `crates/mi-core/examples/identify.rs` runs the same engine from
+the command line.
 
 ## Threads, cancellation and progress
 

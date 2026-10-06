@@ -3,7 +3,8 @@
 //! The flow is plan, preview, apply: [`build_plan`] computes every target path and every conflict
 //! without touching the disk (the Rename screen shows it as the preview), and [`apply_plan`]
 //! carries out a conflict-free plan. Play-all titles and extras are never in a plan's items, so
-//! they stay where they are. Nothing is ever overwritten: every move and copy uses an operation
+//! they stay where they are (`mi-core` rebuilds every plan from the job's record before applying
+//! it, so a plan sent by the window cannot add them). Nothing is ever overwritten: every move and copy uses an operation
 //! that fails when the target exists. Every operation is recorded in the History [`Journal`]
 //! before it happens and marked done after, so History can undo it even after a crash.
 //!
@@ -19,7 +20,7 @@ pub mod subtitles;
 pub use apply::{apply_plan, export_csv};
 pub use journal::Journal;
 pub use naming::{MAX_COMPONENT_BYTES, render_relative_path, sanitize_component};
-pub use plan::{PlanContext, build_plan};
+pub use plan::{DiskView, PlanContext, build_plan};
 pub use subtitles::heard_srt;
 
 /// Errors from this crate.

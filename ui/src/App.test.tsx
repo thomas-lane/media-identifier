@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -273,6 +273,65 @@ describe("Rename and History", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Export list of 9 files" }));
     expect(await screen.findByRole("heading", { name: "Exported a list of 9 files" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open History" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the result of a save when the user leaves and comes back", async () => {
+    await toReview();
+    await userEvent.click(screen.getByRole("button", { name: "Continue to rename →" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Rename 9 files" }));
+    expect(await screen.findByRole("heading", { name: "Renamed 9 files" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open History" }));
+    await userEvent.click(screen.getByRole("button", { name: "Identify" }));
+    expect(await screen.findByRole("heading", { name: "Renamed 9 files" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rename 9 files" })).not.toBeInTheDocument();
+  });
+
+  it("does not save while the preview for changed settings is still being built", async () => {
+    const backend = createMockBackend({ stepMs: 1, downloadStepMs: 1, modelReady: true });
+    const plan = backend.planRename;
+    let release: (() => void) | null = null;
+    let calls = 0;
+    backend.planRename = async (request) => {
+      calls += 1;
+      if (calls > 1) await new Promise<void>((resolve) => (release = resolve));
+      return plan(request);
+    };
+    const apply = vi.spyOn(backend, "applyRename");
+    renderApp(backend);
+    await toConfirmScreen();
+    const identify = await screen.findByRole("button", { name: "Identify 14 files" });
+    await waitFor(() => expect(identify).toBeEnabled());
+    await userEvent.click(identify);
+    await screen.findByRole("heading", { name: /^Review/ }, { timeout: 3000 });
+    await userEvent.click(screen.getByRole("button", { name: "Continue to rename →" }));
+    expect(await screen.findByRole("button", { name: "Rename 9 files" })).toBeEnabled();
+    await userEvent.selectOptions(screen.getByLabelText("Naming"), "Kodi");
+    const updating = screen.getByRole("button", { name: "Updating preview…" });
+    expect(updating).toBeDisabled();
+    await userEvent.click(updating);
+    expect(apply).not.toHaveBeenCalled();
+    await waitFor(() => expect(release).not.toBeNull());
+    await act(async () => release!());
+    expect(await screen.findByRole("button", { name: "Rename 9 files" })).toBeEnabled();
+  });
+
+  it("replaces an existing list only when it was chosen in the save dialog", async () => {
+    const backend = createMockBackend({ stepMs: 1, downloadStepMs: 1, modelReady: true });
+    const plan = vi.spyOn(backend, "planRename");
+    renderApp(backend);
+    await toConfirmScreen();
+    const identify = await screen.findByRole("button", { name: "Identify 14 files" });
+    await waitFor(() => expect(identify).toBeEnabled());
+    await userEvent.click(identify);
+    await screen.findByRole("heading", { name: /^Review/ }, { timeout: 3000 });
+    await userEvent.click(screen.getByRole("button", { name: "Continue to rename →" }));
+    await userEvent.click(screen.getByRole("radio", { name: /Only export a list/ }));
+    const lastMode = () => plan.mock.calls.at(-1)?.[0].mode;
+    await waitFor(() => expect(lastMode()).toMatchObject({ kind: "exportList", replace: false }));
+    await userEvent.click(screen.getByRole("button", { name: "Choose: Save list as" }));
+    await waitFor(() => expect(lastMode()).toMatchObject({ kind: "exportList", replace: true }));
+    await userEvent.type(screen.getByLabelText("Save list as"), "x");
+    await waitFor(() => expect(lastMode()).toMatchObject({ kind: "exportList", replace: false }));
   });
 
   it("blocks saving while two files would get the same name", async () => {

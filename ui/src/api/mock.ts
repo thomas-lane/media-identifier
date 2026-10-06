@@ -415,6 +415,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
           episode: ep.key,
           title: ep.title,
           heardSubtitlesTo: request.saveHeardSubtitles ? to.replace(/\.[^.]+$/, ".srt") : null,
+          sizeBytes: 0,
         });
       }
       const byTarget = new Map<string, FileId[]>();
@@ -422,10 +423,15 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       const conflicts: PlanConflict[] = [...byTarget.entries()]
         .filter(([, ids]) => ids.length > 1)
         .map(([path, fileIds]) => ({ kind: "duplicateTarget", fileIds, path }));
-      return { jobId: request.jobId, mode: request.mode, items, untouched, conflicts };
+      return { jobId: request.jobId, request: structuredClone(request), mode: request.mode, items, untouched, conflicts };
     },
     applyRename: async (plan) => {
       if (plan.conflicts.length > 0) throw apiError("conflict", "Resolve the conflicts first.");
+      // The app builds the plan again from its request and refuses one that differs.
+      const rebuilt = await backend.planRename(plan.request);
+      if (JSON.stringify(rebuilt.items) !== JSON.stringify(plan.items) || JSON.stringify(rebuilt.mode) !== JSON.stringify(plan.mode)) {
+        throw apiError("invalidInput", "The rename preview no longer matches the identified files or the chosen settings. Check the preview and try again.");
+      }
       if (plan.mode.kind === "exportList") return { historyId: null, completed: plan.items.length, failed: [] };
       const id = `hist-${history.length + 1}-${Date.now()}`;
       const job = results.get(plan.jobId);

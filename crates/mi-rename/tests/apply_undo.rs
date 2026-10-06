@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mi_rename::{Journal, PlanContext, apply_plan, build_plan};
+use mi_rename::{DiskView, Journal, PlanContext, apply_plan, build_plan};
 use mi_types::{
     Confidence, Episode, EpisodeKey, EpisodeOrdering, FileDecision, FileId, FileMatch, FileRole,
     JobId, MediaFile, NamingScheme, PlanConflict, ProviderId, RenamePlan, RenamePlanRequest,
@@ -156,7 +156,7 @@ impl Disc {
             files: &self.files,
             matches: &self.matches,
         };
-        build_plan(context, &request, &|p: &Path| p.exists()).unwrap()
+        build_plan(context, &request, DiskView::real()).unwrap()
     }
 
     fn in_place(&self) -> SaveMode {
@@ -666,6 +666,7 @@ fn csv_export_lists_every_file_and_changes_nothing() {
     let plan = disc.plan(
         SaveMode::ExportList {
             destination: csv_path.clone(),
+            replace: false,
         },
         &[("title_t01.mkv", 1), ("title_t02.mkv", 2)],
         NamingScheme::JellyfinPlex,
@@ -682,4 +683,244 @@ fn csv_export_lists_every_file_and_changes_nothing() {
         title_t03.mkv,skipped,,,,\n\
         title_t04.mkv,extra,,,,\n";
     assert_eq!(text, expected);
+}
+
+#[test]
+fn a_record_cut_short_does_not_hide_the_next_save() {
+    let disc = Disc::new();
+    let journal = disc.journal();
+    let first = apply_plan(
+        &disc.plan(
+            disc.in_place(),
+            &[("title_t01.mkv", 1)],
+            NamingScheme::JellyfinPlex,
+        ),
+        "First",
+        &journal,
+        &no_subtitles,
+    )
+    .unwrap();
+    // The disk filled up while the next record was being written.
+    let mut text = fs::read_to_string(journal.path()).unwrap();
+    text.push_str("{\"kind\":\"intent\",\"entry\":\"x\",\"op\":0,\"act");
+    fs::write(journal.path(), text).unwrap();
+
+    let second = apply_plan(
+        &disc.plan(
+            disc.in_place(),
+            &[("title_t02.mkv", 2)],
+            NamingScheme::JellyfinPlex,
+        ),
+        "Second",
+        &journal,
+        &no_subtitles,
+    )
+    .unwrap();
+    let second_id = second.history_id.unwrap();
+    let ids: Vec<_> = journal.list().unwrap().into_iter().map(|e| e.id).collect();
+    assert!(ids.contains(&second_id), "{ids:?}");
+    assert!(ids.contains(&first.history_id.unwrap()));
+    let undo = journal.undo(&second_id).unwrap();
+    assert!(undo.failed.is_empty(), "{:?}", undo.failed);
+    assert_eq!(undo.restored, 1);
+    assert!(disc.root.join("title_t02.mkv").exists());
+}
+
+#[test]
+fn a_file_replaced_since_the_scan_is_left_alone() {
+    let disc = Disc::new();
+    let plan = disc.standard_plan();
+    // A new rip with the same name and a different size.
+    fs::write(disc.root.join("title_t02.mkv"), "another disc's title").unwrap();
+    let outcome = apply_plan(&plan, "S", &disc.journal(), &no_subtitles).unwrap();
+    assert_eq!(outcome.completed, 2);
+    assert_eq!(outcome.failed.len(), 1);
+    assert_eq!(outcome.failed[0].file_id, FileId("title_t02.mkv".into()));
+    assert!(
+        outcome.failed[0]
+            .message
+            .contains("changed since it was identified")
+    );
+    assert_eq!(
+        fs::read_to_string(disc.root.join("title_t02.mkv")).unwrap(),
+        "another disc's title"
+    );
+}
+
+#[test]
+fn undo_waits_for_a_copy_destination_that_is_not_connected() {
+    let disc = Disc::new();
+    // The folder the user picked on an external drive.
+    let drive = disc.root.parent().unwrap().join("Drive");
+    fs::create_dir_all(&drive).unwrap();
+    let plan = disc.plan(
+        SaveMode::CopyToFolder {
+            destination: drive.clone(),
+        },
+        &[("title_t01.mkv", 1)],
+        NamingScheme::JellyfinPlex,
+    );
+    let journal = disc.journal();
+    let outcome = apply_plan(&plan, "S", &journal, &no_subtitles).unwrap();
+    let id = outcome.history_id.unwrap();
+    let copy = plan.items[0].to.clone();
+    assert!(copy.exists());
+
+    // The drive is unmounted: neither the copy nor the folder it was copied into is there.
+    let away = disc.root.parent().unwrap().join("Unmounted");
+    fs::rename(&drive, &away).unwrap();
+    let undo = journal.undo(&id).unwrap();
+    assert_eq!(undo.restored, 0);
+    assert_eq!(undo.failed.len(), 1, "{:?}", undo.failed);
+    assert!(undo.failed[0].message.contains("not available"));
+    assert_eq!(journal.list().unwrap()[0].undone_at_ms, None);
+
+    // Connected again: undo removes the copy.
+    fs::rename(&away, &drive).unwrap();
+    let undo = journal.undo(&id).unwrap();
+    assert!(undo.failed.is_empty(), "{:?}", undo.failed);
+    assert_eq!(undo.restored, 1);
+    assert!(!copy.exists());
+    assert!(drive.exists(), "the folder the user picked stays");
+
+    // A copy the user deleted, with its folder still there, needs nothing.
+    let outcome = apply_plan(&plan, "S", &journal, &no_subtitles).unwrap();
+    fs::remove_file(&copy).unwrap();
+    let undo = journal.undo(&outcome.history_id.unwrap()).unwrap();
+    assert!(undo.failed.is_empty(), "{:?}", undo.failed);
+}
+
+#[test]
+fn an_interrupted_copy_is_never_credited_with_a_later_saves_copy() {
+    let disc = Disc::new();
+    let journal = disc.journal();
+    let library = disc.root.parent().unwrap().join("Library");
+    let plan = disc.plan(
+        SaveMode::CopyToFolder {
+            destination: library.clone(),
+        },
+        &[("title_t01.mkv", 1)],
+        NamingScheme::JellyfinPlex,
+    );
+    let target = plan.items[0].to.clone();
+    let temp = target.parent().unwrap().join(".mi-e1-c0.part");
+    // Save e1 stopped right after recording its copy, before writing anything.
+    fs::create_dir_all(&disc.data).unwrap();
+    let p = |p: &Path| p.to_string_lossy().into_owned();
+    let lines = [
+        serde_json::json!({"kind":"begin","entry":"e1","createdAtMs":1,"showName":"S","folder":p(&disc.root),"mode":"copyToFolder"}),
+        serde_json::json!({"kind":"intent","entry":"e1","op":0,"action":"copy","phase":"apply","item":0,"fileId":"title_t01.mkv","from":p(&disc.root.join("title_t01.mkv")),"to":p(&target),"temp":p(&temp),"sizeBytes":3}),
+    ];
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    fs::write(journal.path(), text).unwrap();
+
+    // The user saves again; this copy succeeds at the same target.
+    let outcome = apply_plan(&plan, "S", &journal, &no_subtitles).unwrap();
+    assert_eq!(outcome.completed, 1);
+    let history = journal.list().unwrap();
+    assert_eq!(history.len(), 1, "the interrupted save copied nothing");
+
+    // Undoing the interrupted save leaves the later copy alone.
+    let undo = journal.undo(&mi_types::HistoryId("e1".into())).unwrap();
+    assert_eq!(undo.restored, 0);
+    assert_eq!(fs::read_to_string(&target).unwrap(), "one");
+}
+
+#[test]
+fn a_copy_left_unfinished_is_listed_and_undo_removes_it() {
+    let disc = Disc::new();
+    let journal = disc.journal();
+    let library = disc.root.parent().unwrap().join("Library");
+    let target = library.join("S01E01.mkv");
+    let temp = library.join(".mi-e1-c0.part");
+    fs::create_dir_all(&library).unwrap();
+    fs::write(&temp, "on").unwrap(); // cut short
+    fs::create_dir_all(&disc.data).unwrap();
+    let p = |p: &Path| p.to_string_lossy().into_owned();
+    let lines = [
+        serde_json::json!({"kind":"begin","entry":"e1","createdAtMs":1,"showName":"S","folder":p(&disc.root),"mode":"copyToFolder"}),
+        serde_json::json!({"kind":"intent","entry":"e1","op":0,"action":"copy","phase":"apply","item":0,"fileId":"title_t01.mkv","from":p(&disc.root.join("title_t01.mkv")),"to":p(&target),"temp":p(&temp),"sizeBytes":3}),
+    ];
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    fs::write(journal.path(), text).unwrap();
+
+    let history = journal.list().unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].items[0].to, temp);
+    let undo = journal.undo(&history[0].id).unwrap();
+    assert!(undo.failed.is_empty(), "{:?}", undo.failed);
+    assert!(!temp.exists());
+}
+
+#[test]
+fn undo_keeps_a_copy_edited_without_changing_its_size() {
+    let disc = Disc::new();
+    let library = disc.root.parent().unwrap().join("Library");
+    let plan = disc.plan(
+        SaveMode::CopyToFolder {
+            destination: library.clone(),
+        },
+        &[("title_t01.mkv", 1)],
+        NamingScheme::JellyfinPlex,
+    );
+    let journal = disc.journal();
+    let outcome = apply_plan(&plan, "S", &journal, &no_subtitles).unwrap();
+    let copy = plan.items[0].to.clone();
+    // A tag editor rewrites the file in place with the same length.
+    fs::write(&copy, "ONE").unwrap();
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    fs::File::options()
+        .write(true)
+        .open(&copy)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    let undo = journal.undo(&outcome.history_id.unwrap()).unwrap();
+    assert_eq!(undo.restored, 0);
+    assert_eq!(undo.failed.len(), 1);
+    assert_eq!(fs::read_to_string(&copy).unwrap(), "ONE");
+}
+
+#[test]
+fn an_export_never_replaces_a_list_it_was_not_told_to() {
+    let disc = Disc::new();
+    let csv_path = disc.root.parent().unwrap().join("list.csv");
+    fs::write(&csv_path, "disc 1").unwrap();
+    let export = |replace| {
+        disc.plan(
+            SaveMode::ExportList {
+                destination: csv_path.clone(),
+                replace,
+            },
+            &[("title_t01.mkv", 1)],
+            NamingScheme::JellyfinPlex,
+        )
+    };
+    let plan = export(false);
+    assert_eq!(
+        plan.conflicts,
+        vec![PlanConflict::ListExists {
+            path: csv_path.clone()
+        }]
+    );
+    // Applied anyway (the file appeared after planning), the write still refuses.
+    let mut forced = plan.clone();
+    forced.conflicts.clear();
+    assert!(apply_plan(&forced, "S", &disc.journal(), &no_subtitles).is_err());
+    assert_eq!(fs::read_to_string(&csv_path).unwrap(), "disc 1");
+
+    let outcome = apply_plan(&export(true), "S", &disc.journal(), &no_subtitles).unwrap();
+    assert_eq!(outcome.completed, 1);
+    assert!(
+        fs::read_to_string(&csv_path)
+            .unwrap()
+            .contains("title_t01.mkv")
+    );
+    let names: Vec<_> = fs::read_dir(disc.root.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".mi-"))
+        .collect();
+    assert!(names.is_empty(), "no temporary file is left: {names:?}");
 }

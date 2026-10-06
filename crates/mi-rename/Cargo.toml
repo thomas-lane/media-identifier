@@ -15,6 +15,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 csv.workspace = true
+unicode-normalization = "0.1.25"
 
 # No-replace renames through the operating system (see src/fsops.rs).
 [target.'cfg(target_os = "macos")'.dependencies]

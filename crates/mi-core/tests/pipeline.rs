@@ -594,7 +594,9 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
     for i in 1..=3 {
         let name = format!("title_t0{i}.mkv");
         std::fs::write(folder.join(&name), format!("video {i}")).unwrap();
-        files.push(media_file(&folder, &name, 120.0, FileRole::Candidate));
+        let mut file = media_file(&folder, &name, 120.0, FileRole::Candidate);
+        file.size_bytes = 7;
+        files.push(file);
     }
     let media = FakeMedia::new(scan(&folder, files));
     let script: Script = (0..3)
@@ -640,13 +642,23 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
     assert!(plan.conflicts.is_empty());
     assert_eq!(plan.items.len(), 2);
 
-    // A plan whose source is not one of the job's files is refused.
+    // A plan that differs from what the job's record gives is refused: a changed source or
+    // target, a conflict removed, or a plan for an earlier version of the request.
     let mut tampered = plan.clone();
     tampered.items[0].from = dir.path().join("elsewhere.mkv");
-    assert!(matches!(
-        h.engine.apply_rename(tampered).await,
-        Err(mi_core::CoreError::Invalid(_))
-    ));
+    let mut retargeted = plan.clone();
+    retargeted.items[0].to = dir.path().join("anywhere.mkv");
+    let mut stale = plan.clone();
+    stale.request.naming = NamingScheme::Kodi;
+    let mut play_all = plan.clone();
+    play_all.items.push(play_all.items[0].clone());
+    for bad in [tampered, retargeted, stale, play_all] {
+        assert!(matches!(
+            h.engine.apply_rename(bad).await,
+            Err(mi_core::CoreError::Invalid(_))
+        ));
+    }
+    assert!(folder.join("title_t01.mkv").exists(), "nothing was renamed");
 
     let outcome = h.engine.apply_rename(plan).await.unwrap();
     assert_eq!(outcome.completed, 2);
@@ -682,6 +694,22 @@ async fn approved_files_are_renamed_in_place_and_undone_from_history() {
             .conflicts
             .iter()
             .any(|c| matches!(c, PlanConflict::TargetExists { .. }))
+    );
+
+    // A new rip with the same file name is not the file that was identified.
+    std::fs::write(folder.join("title_t01.mkv"), "another disc").unwrap();
+    let changed = h.engine.plan_rename(&request).unwrap();
+    assert!(changed.conflicts.iter().any(|c| matches!(
+        c,
+        PlanConflict::SourceChanged { file_id, .. } if file_id.0 == "title_t01.mkv"
+    )));
+    assert!(matches!(
+        h.engine.apply_rename(again).await,
+        Err(mi_core::CoreError::Invalid(_)) | Err(mi_core::CoreError::Rename(_))
+    ));
+    assert_eq!(
+        std::fs::read_to_string(folder.join("title_t01.mkv")).unwrap(),
+        "another disc"
     );
 }
 

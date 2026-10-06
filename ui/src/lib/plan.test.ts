@@ -4,7 +4,7 @@ import type { RenameItem } from "../types/generated";
 import { conflictText, previewTree, untouchedSummary } from "./plan";
 
 function item(fileId: string, to: string): RenameItem {
-  return { fileId, from: `/Rips/${fileId}`, to, episode: { season: 1, number: 1 }, title: "", heardSubtitlesTo: null };
+  return { fileId, from: `/Rips/${fileId}`, to, episode: { season: 1, number: 1 }, title: "", heardSubtitlesTo: null, sizeBytes: 0 };
 }
 
 describe("plan preview", () => {
@@ -46,5 +46,7 @@ describe("plan preview", () => {
       /^a\.mkv and b\.mkv would both become x\.mkv/,
     );
     expect(conflictText({ kind: "targetExists", fileId: "a.mkv", path: "/R/x.mkv" })).toMatch(/^x\.mkv already exists/);
+    expect(conflictText({ kind: "sourceChanged", fileId: "a.mkv", path: "/R/a.mkv" })).toMatch(/^a\.mkv was moved, renamed or replaced/);
+    expect(conflictText({ kind: "listExists", path: "/R/list.csv" })).toMatch(/^list\.csv already exists/);
   });
 });

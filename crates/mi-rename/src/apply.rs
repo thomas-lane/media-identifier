@@ -10,7 +10,7 @@ use mi_types::{
 };
 
 use crate::Journal;
-use crate::fsops::{describe, exists, free_temp_name, rename_no_replace};
+use crate::fsops::{describe, exists, free_temp_name, modified_ns, modified_of, rename_no_replace};
 use crate::journal::{Action, EntryWriter, Intent, Phase};
 use crate::plan::scan_root;
 
@@ -30,9 +30,14 @@ use crate::plan::scan_root;
 /// `heard_subtitles` returns text for its file, a new `.srt` file is written there (never over an
 /// existing file) after the video is in place; [`crate::heard_srt`] formats it.
 ///
+/// A file whose size is not the scanned size ([`RenameItem::size_bytes`]) is left alone and
+/// reported as failed: the name may now belong to a different file.
+///
 /// Failed operations are reported in [`RenameOutcome::failed`] and the rest continue. An error is
-/// returned only when the plan has conflicts or the journal cannot be written; in the latter case
-/// the operations already done are in the journal.
+/// returned only when the plan has conflicts or the journal cannot be written. When the journal
+/// fails during a rename, files already moved to temporary names are moved back to their
+/// original names first (the error says how many), so no file is left under a hidden name; the
+/// operations already done are in the journal.
 pub fn apply_plan(
     plan: &RenamePlan,
     show_name: &str,
@@ -43,12 +48,15 @@ pub fn apply_plan(
         return Err(crate::RenameError::Conflicts(plan.conflicts.len()));
     }
     let kind = match &plan.mode {
-        SaveMode::ExportList { destination } => return export_csv(plan, destination),
+        SaveMode::ExportList {
+            destination,
+            replace,
+        } => return export_csv(plan, destination, *replace),
         SaveMode::RenameInPlace { .. } => SaveModeKind::RenameInPlace,
         SaveMode::CopyToFolder { .. } => SaveModeKind::CopyToFolder,
     };
     let folder = scanned_folder(plan).unwrap_or_default();
-    let (_guard, mut writer) = journal.start(show_name, &folder, kind);
+    let (_guard, mut writer) = journal.start(show_name, &folder, kind)?;
     let mut failed = Vec::new();
     let mut placed: Vec<&RenameItem> = Vec::new();
 
@@ -57,6 +65,9 @@ pub fn apply_plan(
             let mut moves = Vec::new();
             for (i, item) in plan.items.iter().enumerate() {
                 match fs::metadata(&item.from) {
+                    Ok(meta) if meta.is_file() && meta.len() != item.size_bytes => {
+                        failed.push(failure(item, &item.from, CHANGED.into()))
+                    }
                     Ok(meta) if meta.is_file() => {
                         if item.from == item.to {
                             placed.push(item);
@@ -67,6 +78,7 @@ pub fn apply_plan(
                                 from: item.from.clone(),
                                 to: item.to.clone(),
                                 size: meta.len(),
+                                modified_ns: modified_of(&meta),
                             });
                         }
                     }
@@ -103,8 +115,12 @@ pub fn apply_plan(
     })
 }
 
-/// Writes the plan as CSV to `destination` (replacing a file the user chose to replace in the
-/// save dialog).
+/// Writes the plan as CSV to `destination`.
+///
+/// The CSV is written to a temporary file in the same folder and then renamed to `destination`,
+/// so a crash never leaves a half-written list. With `replace`, the rename replaces an existing
+/// file (the user confirmed that in the save dialog); without it, an existing file is never
+/// replaced and the export fails with `AlreadyExists`.
 ///
 /// Columns: `file` (the file's path relative to the scanned folder), `status` (`episode`,
 /// `play-all`, `extra` or `skipped`), `season`, `episode`, `title`, and `new_name` (the target
@@ -112,7 +128,11 @@ pub fn apply_plan(
 /// `file`. The file is UTF-8 with a byte order mark so Excel on Windows reads accents correctly.
 /// A cell that begins with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so
 /// a spreadsheet shows a title such as `=Hello` as text instead of running it as a formula.
-pub fn export_csv(plan: &RenamePlan, destination: &Path) -> crate::Result<RenameOutcome> {
+pub fn export_csv(
+    plan: &RenamePlan,
+    destination: &Path,
+    replace: bool,
+) -> crate::Result<RenameOutcome> {
     let root = match &plan.mode {
         SaveMode::RenameInPlace { root } => Some(root.clone()),
         SaveMode::CopyToFolder { destination } => Some(destination.clone()),
@@ -165,7 +185,29 @@ pub fn export_csv(plan: &RenamePlan, destination: &Path) -> crate::Result<Rename
     let bytes = out
         .into_inner()
         .map_err(|e| crate::RenameError::Io(e.into_error()))?;
-    fs::write(destination, bytes)?;
+    let folder = match destination.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    let temp = free_temp_name(folder, &format!("list-{}", std::process::id()), "part");
+    let written = (|| -> io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        drop(file);
+        if replace {
+            fs::rename(&temp, destination)
+        } else {
+            rename_no_replace(&temp, destination)
+        }
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&temp);
+        return Err(e.into());
+    }
     Ok(RenameOutcome {
         history_id: None,
         completed: plan.items.len() as u32,
@@ -200,7 +242,10 @@ fn failure(item: &RenameItem, path: &Path, message: String) -> OperationFailure 
     }
 }
 
-/// One file to move, with the size recorded for verification.
+/// Why a file whose size differs from the scan is left alone.
+const CHANGED: &str = "it changed since it was identified (a different file may have this name now), so it was left as it is";
+
+/// One file to move, with the size and modification time recorded for verification.
 #[derive(Debug, Clone)]
 pub(crate) struct PlannedMove {
     pub item: u32,
@@ -208,30 +253,52 @@ pub(crate) struct PlannedMove {
     pub from: PathBuf,
     pub to: PathBuf,
     pub size: u64,
+    pub modified_ns: Option<i64>,
 }
 
 /// Moves a set of files in two phases (all to temporary names, then all to their targets),
 /// journaling every step. A file that cannot reach its target is moved back to where it started.
 /// Returns the moves that completed; failures are appended to `failed`.
+///
+/// When the journal cannot be written, the files still under temporary names are moved back to
+/// where they started before the error is returned, because nothing else would find them: the
+/// temporary names are hidden and are not video files.
 pub(crate) fn move_set(
     writer: &mut EntryWriter,
     phase: Phase,
     moves: Vec<PlannedMove>,
     failed: &mut Vec<OperationFailure>,
 ) -> crate::Result<Vec<PlannedMove>> {
+    let mut pending: Vec<(PlannedMove, PathBuf)> = Vec::new();
+    let mut moved = Vec::new();
+    match move_set_steps(writer, phase, moves, failed, &mut pending, &mut moved) {
+        Ok(()) => Ok(moved),
+        Err(e) => Err(put_back(writer, phase, pending, e)),
+    }
+}
+
+/// The two phases of [`move_set`]. `pending` holds the files under temporary names at every
+/// point where an error can be returned.
+fn move_set_steps(
+    writer: &mut EntryWriter,
+    phase: Phase,
+    moves: Vec<PlannedMove>,
+    failed: &mut Vec<OperationFailure>,
+    pending: &mut Vec<(PlannedMove, PathBuf)>,
+    moved: &mut Vec<PlannedMove>,
+) -> crate::Result<()> {
     let tag = match phase {
         Phase::Apply => "a",
         Phase::Undo => "u",
     };
-    let mut staged = Vec::new();
     for m in moves {
         let dir = m.from.parent().unwrap_or(Path::new("."));
         let temp = free_temp_name(dir, &format!("{}-{tag}{}", writer.entry(), m.item), "tmp");
         let op = writer.intent(move_intent(phase, &m, &m.from, &temp))?;
         match rename_no_replace(&m.from, &temp) {
             Ok(()) => {
+                pending.push((m, temp));
                 writer.done(op)?;
-                staged.push((m, temp));
             }
             Err(e) => {
                 writer.failed(op)?;
@@ -244,17 +311,17 @@ pub(crate) fn move_set(
         }
     }
 
-    let mut moved = Vec::new();
-    for (m, temp) in staged {
-        let result = match m.to.parent() {
+    while let Some((m, temp)) = pending.first().cloned() {
+        let reached = match m.to.parent() {
             Some(parent) => ensure_dir(writer, phase, parent),
             None => Ok(()),
         };
-        let result = match result {
+        let reached = match reached {
             Ok(()) => {
                 let op = writer.intent(move_intent(phase, &m, &temp, &m.to))?;
                 match rename_no_replace(&temp, &m.to) {
                     Ok(()) => {
+                        pending.remove(0);
                         writer.done(op)?;
                         Ok(())
                     }
@@ -264,13 +331,21 @@ pub(crate) fn move_set(
                     }
                 }
             }
+            Err(e)
+                if e.get_ref()
+                    .is_some_and(|inner| inner.is::<crate::RenameError>()) =>
+            {
+                // ensure_dir could not write the journal.
+                return Err(crate::RenameError::Journal(e.to_string()));
+            }
             Err(e) => Err(e),
         };
-        match result {
+        match reached {
             Ok(()) => moved.push(m),
             Err(e) => {
                 let reason = describe(&e);
                 let op = writer.intent(move_intent(phase, &m, &temp, &m.from))?;
+                pending.remove(0);
                 let message = match rename_no_replace(&temp, &m.from) {
                     Ok(()) => {
                         writer.done(op)?;
@@ -294,7 +369,58 @@ pub(crate) fn move_set(
             }
         }
     }
-    Ok(moved)
+    Ok(())
+}
+
+/// After a journal error, moves the files in `pending` back from their temporary names to where
+/// they started (journaling it while the journal accepts records), and returns the error with
+/// what happened to them.
+fn put_back(
+    writer: &mut EntryWriter,
+    phase: Phase,
+    pending: Vec<(PlannedMove, PathBuf)>,
+    error: crate::RenameError,
+) -> crate::RenameError {
+    let reason = match error {
+        crate::RenameError::Journal(message) => message,
+        other => other.to_string(),
+    };
+    if pending.is_empty() {
+        return crate::RenameError::Journal(reason);
+    }
+    let mut journal_ok = true;
+    let mut restored = 0;
+    let mut stranded = Vec::new();
+    for (m, temp) in pending {
+        let op = if journal_ok {
+            writer
+                .intent(move_intent(phase, &m, &temp, &m.from))
+                .inspect_err(|_| journal_ok = false)
+                .ok()
+        } else {
+            None
+        };
+        let result = rename_no_replace(&temp, &m.from);
+        if let Some(op) = op {
+            let recorded = match &result {
+                Ok(()) => writer.done(op),
+                Err(_) => writer.failed(op),
+            };
+            journal_ok &= recorded.is_ok();
+        }
+        match result {
+            Ok(()) => restored += 1,
+            Err(_) => stranded.push(temp.display().to_string()),
+        }
+    }
+    let mut message = format!("{reason}; {restored} files were moved back to their original names");
+    if !stranded.is_empty() {
+        message.push_str(&format!(
+            "; these could not be moved back and keep a temporary name: {}",
+            stranded.join(", ")
+        ));
+    }
+    crate::RenameError::Journal(message)
 }
 
 fn move_intent(phase: Phase, m: &PlannedMove, from: &Path, to: &Path) -> Intent {
@@ -303,6 +429,7 @@ fn move_intent(phase: Phase, m: &PlannedMove, from: &Path, to: &Path) -> Intent 
     intent.file_id = Some(m.file_id.clone());
     intent.from = Some(from.to_path_buf());
     intent.size_bytes = Some(m.size);
+    intent.modified_ns = m.modified_ns;
     intent
 }
 
@@ -342,6 +469,10 @@ fn copy_one(
     failed: &mut Vec<OperationFailure>,
 ) -> crate::Result<bool> {
     let size = match fs::metadata(&item.from) {
+        Ok(meta) if meta.is_file() && meta.len() != item.size_bytes => {
+            failed.push(failure(item, &item.from, CHANGED.into()));
+            return Ok(false);
+        }
         Ok(meta) if meta.is_file() => meta.len(),
         Ok(_) => {
             failed.push(failure(item, &item.from, "it is not a file".into()));
@@ -381,7 +512,7 @@ fn copy_one(
     })();
     match result {
         Ok(()) => {
-            writer.done(op)?;
+            writer.done_at(op, modified_ns(&item.to))?;
             Ok(true)
         }
         Err(e) => {
@@ -418,7 +549,7 @@ fn write_subtitles(
         file.sync_all()
     })();
     match result {
-        Ok(()) => writer.done(op)?,
+        Ok(()) => writer.done_at(op, modified_ns(path))?,
         Err(e) => {
             if created {
                 let _ = fs::remove_file(path);
@@ -432,4 +563,73 @@ fn write_subtitles(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Three files to rename in one folder, and a journal that fails after `writes` records.
+    fn rename_with_failing_journal(writes: u32) -> (tempfile::TempDir, crate::Result<()>) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut moves = Vec::new();
+        for i in 0..3u32 {
+            let from = dir.path().join(format!("title_t0{i}.mkv"));
+            fs::write(&from, format!("file {i}")).unwrap();
+            moves.push(PlannedMove {
+                item: i,
+                file_id: FileId(format!("title_t0{i}.mkv")),
+                from,
+                to: dir.path().join("Season 01").join(format!("E0{i}.mkv")),
+                size: 6,
+                modified_ns: None,
+            });
+        }
+        let journal = Journal::new(dir.path().join("data").join("history.jsonl"));
+        let (_guard, mut writer) = journal
+            .start("Show", dir.path(), SaveModeKind::RenameInPlace)
+            .unwrap();
+        writer.writes_left = Some(writes);
+        let mut failed = Vec::new();
+        let result = move_set(&mut writer, Phase::Apply, moves, &mut failed).map(|_| ());
+        (dir, result)
+    }
+
+    #[test]
+    fn a_journal_failure_moves_staged_files_back() {
+        // Every cut-off point from the first record to the last.
+        for writes in 0..20 {
+            let (dir, result) = rename_with_failing_journal(writes);
+            let mut names: Vec<String> = fs::read_dir(dir.path())
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with(".mi-"))
+                .collect();
+            names.sort();
+            assert!(
+                names.is_empty(),
+                "after {writes} records: {names:?} {result:?}"
+            );
+            // Every file is either at its original name or at its target.
+            let mut at_original = 0;
+            for i in 0..3 {
+                let original = dir.path().join(format!("title_t0{i}.mkv"));
+                let target = dir.path().join("Season 01").join(format!("E0{i}.mkv"));
+                assert!(
+                    original.exists() != target.exists(),
+                    "after {writes} records, file {i}"
+                );
+                at_original += usize::from(original.exists());
+            }
+            match result {
+                // Before the first rename, and after the last, nothing needed moving back.
+                Err(e) if writes >= 2 && at_original > 0 => {
+                    assert!(e.to_string().contains("moved back"), "{writes}: {e}")
+                }
+                Err(e) => assert!(matches!(e, crate::RenameError::Journal(_)), "{e}"),
+                Ok(()) => {}
+            }
+        }
+    }
 }

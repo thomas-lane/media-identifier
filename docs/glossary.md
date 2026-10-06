@@ -124,7 +124,11 @@ with a confident margin; anchors check the disc order and place the files betwee
 
 **History entry**: one save (rename in place or copy) as recorded in the History journal
 (`history.jsonl`); undoing it moves renamed files back and deletes unchanged copies. A CSV export
-changes no files and makes no entry.
+changes no files and makes no entry. See [saving](saving.md).
+
+**Changed source**: a file that, when a rename plan is built or applied, is missing from its
+scanned path or has a different size than when it was scanned. It is never renamed, because the
+name may now belong to a different file.
 
 **Two-phase rename**: renaming every file first to a temporary name in its own folder, then to its
 target, so files can swap names or change only the case of their names.

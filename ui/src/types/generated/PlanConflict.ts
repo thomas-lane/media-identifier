@@ -20,4 +20,16 @@ fileIds: Array<FileId>,
 /**
  * The shared target.
  */
+path: string, } | { "kind": "sourceChanged", 
+/**
+ * The file.
+ */
+fileId: FileId, 
+/**
+ * Its scanned path.
+ */
+path: string, } | { "kind": "listExists", 
+/**
+ * The CSV file path.
+ */
 path: string, };

@@ -54,8 +54,9 @@ These are small samples, not accuracy measurements.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): crates, data flow, file ownership
+- [Architecture](docs/architecture.md): crates, data flow, data folders
 - [How identification works](docs/identification.md)
+- [Saving and undo](docs/saving.md): naming, rename, copy, CSV, History
 - [Online sources](docs/sources.md): services, keys, limits, attribution
 - [Install](docs/install.md)
 - [Development](docs/development.md): build, test, release

@@ -15,4 +15,10 @@ destination: string, } | { "kind": "exportList",
 /**
  * CSV file path.
  */
-destination: string, };
+destination: string, 
+/**
+ * Replace a file already at `destination`. The window sets it only for a path the user
+ * picked in the save dialog, which asked before replacing; a typed path never replaces
+ * a file.
+ */
+replace: boolean, };

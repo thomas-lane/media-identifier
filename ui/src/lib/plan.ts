@@ -61,5 +61,9 @@ export function conflictText(conflict: PlanConflict): string {
       return `${baseName(conflict.path)} already exists, so ${baseName(conflict.fileId)} can't take that name.`;
     case "duplicateTarget":
       return `${conflict.fileIds.map(baseName).join(" and ")} would both become ${baseName(conflict.path)}. Choose a different episode for one of them on the Review screen.`;
+    case "sourceChanged":
+      return `${baseName(conflict.path)} was moved, renamed or replaced since it was identified. Skip it on the Review screen, or identify the folder again.`;
+    case "listExists":
+      return `${baseName(conflict.path)} already exists. Choose it with … to replace it, or type another name.`;
   }
 }

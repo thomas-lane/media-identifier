@@ -12,7 +12,7 @@ import { toDecisions } from "../lib/review";
 import { useIdentify } from "../state/identify";
 import { useNav } from "../state/nav";
 import { useSettings } from "../state/settings";
-import type { NamingScheme, RenameOutcome, RenamePlan, SaveMode, SaveModeKind } from "../types/generated";
+import type { NamingScheme, RenamePlan, RenamePlanRequest, SaveMode, SaveModeKind } from "../types/generated";
 
 type NamingKind = NamingScheme["kind"];
 
@@ -30,20 +30,21 @@ export function RenameScreen() {
   const { settings, update } = useSettings();
   const nav = useNav();
   const ids = useId();
-  const { job, reviews, request } = state;
+  const { job, reviews, request, saved, savedEarlier } = state;
   const folder = request?.folder ?? "";
 
   const [mode, setMode] = useState<SaveModeKind>(settings?.saveMode ?? "renameInPlace");
   const [root, setRoot] = useState(folder);
   const [copyTo, setCopyTo] = useState("");
   const [csvPath, setCsvPath] = useState(() => joinPath(folder, `${request?.show.name ?? "Episodes"} episodes.csv`));
+  // True only for a path picked in the save dialog, which already asked about replacing it.
+  const [csvChosen, setCsvChosen] = useState(false);
   const [namingKind, setNamingKind] = useState<NamingKind>(settings?.naming.kind ?? "jellyfinPlex");
   const [template, setTemplate] = useState(settings?.naming.kind === "custom" ? settings.naming.template : DEFAULT_TEMPLATE);
   const [subtitles, setSubtitles] = useState(settings?.saveHeardSubtitles ?? false);
-  const [currentPlan, setPlan] = useState<RenamePlan | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
+  // The latest preview, with the request it answers (as JSON) and any error building it.
+  const [preview, setPreview] = useState<{ key: string; plan: RenamePlan | null; error: string | null } | null>(null);
   const [applying, setApplying] = useState(false);
-  const [outcome, setOutcome] = useState<RenameOutcome | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
 
   const order = useMemo(() => job?.fileIds ?? [], [job]);
@@ -55,28 +56,28 @@ export function RenameScreen() {
   const saveMode: SaveMode | null = useMemo(() => {
     if (mode === "renameInPlace") return root ? { kind: "renameInPlace", root } : null;
     if (mode === "copyToFolder") return copyTo ? { kind: "copyToFolder", destination: copyTo } : null;
-    return csvPath ? { kind: "exportList", destination: csvPath } : null;
-  }, [mode, root, copyTo, csvPath]);
+    return csvPath ? { kind: "exportList", destination: csvPath, replace: csvChosen } : null;
+  }, [mode, root, copyTo, csvPath, csvChosen]);
+  const planRequest: RenamePlanRequest | null = useMemo(
+    () =>
+      job && saveMode
+        ? { jobId: job.jobId, decisions, mode: saveMode, naming, saveHeardSubtitles: mode !== "exportList" && subtitles }
+        : null,
+    [job, decisions, saveMode, naming, subtitles, mode],
+  );
+  const requestKey = JSON.stringify(planRequest);
 
   useEffect(() => {
-    if (!job || !saveMode) return;
+    if (!planRequest) return;
     let active = true;
     backend
-      .planRename({ jobId: job.jobId, decisions, mode: saveMode, naming, saveHeardSubtitles: mode !== "exportList" && subtitles })
-      .then((p) => {
-        if (!active) return;
-        setPlan(p);
-        setPlanError(null);
-      })
-      .catch((e: unknown) => {
-        if (!active) return;
-        setPlan(null);
-        setPlanError(toApiError(e).message);
-      });
+      .planRename(planRequest)
+      .then((plan) => active && setPreview({ key: requestKey, plan, error: null }))
+      .catch((e: unknown) => active && setPreview({ key: requestKey, plan: null, error: toApiError(e).message }));
     return () => {
       active = false;
     };
-  }, [backend, job, decisions, saveMode, naming, subtitles, mode]);
+  }, [backend, planRequest, requestKey]);
 
   if (!job || !request) return null;
 
@@ -86,13 +87,19 @@ export function RenameScreen() {
   };
   const pickCsv = async () => {
     const picked = await backend.chooseSaveFile(csvPath).catch(() => null);
-    if (picked) setCsvPath(picked);
+    if (picked) {
+      setCsvPath(picked);
+      setCsvChosen(true);
+    }
   };
 
-  // A plan for an earlier destination is not shown once the destination is cleared.
-  const plan = saveMode ? currentPlan : null;
+  // A plan for an earlier destination is not shown once the destination is cleared. While a
+  // newer preview is being built (`planning`), the previous one stays visible but cannot be saved.
+  const plan = saveMode ? (preview?.plan ?? null) : null;
+  const planError = saveMode ? (preview?.error ?? null) : null;
+  const planning = planRequest !== null && preview?.key !== requestKey;
   const count = plan?.items.length ?? 0;
-  const blocked = !plan || plan.conflicts.length > 0 || count === 0 || applying;
+  const blocked = !plan || planning || plan.conflicts.length > 0 || count === 0 || applying;
   const verb = mode === "renameInPlace" ? "Rename" : mode === "copyToFolder" ? "Copy" : "Export";
   const primaryLabel = mode === "exportList" ? `Export list of ${plural(count, "file")}` : `${verb} ${plural(count, "file")}`;
 
@@ -102,7 +109,7 @@ export function RenameScreen() {
     setApplyError(null);
     try {
       const result = await backend.applyRename(plan);
-      setOutcome(result);
+      dispatch({ type: "saved", saved: { outcome: result, mode, csvPath: mode === "exportList" ? csvPath : null } });
       void update({ saveMode: mode, naming, saveHeardSubtitles: subtitles });
     } catch (e) {
       setApplyError(toApiError(e).message);
@@ -111,17 +118,18 @@ export function RenameScreen() {
     }
   };
 
-  if (outcome) {
+  if (saved) {
+    const { outcome, mode: savedMode, csvPath: savedCsv } = saved;
     const done =
-      mode === "renameInPlace" ? "Renamed" : mode === "copyToFolder" ? "Copied" : "Exported a list of";
+      savedMode === "renameInPlace" ? "Renamed" : savedMode === "copyToFolder" ? "Copied" : "Exported a list of";
     return (
       <section className="screen" aria-labelledby="saved-title">
         <h1 id="saved-title">
           {done} {plural(outcome.completed, "file")}
         </h1>
-        {mode === "exportList" ? (
+        {savedMode === "exportList" ? (
           <p className="muted" style={{ margin: 0 }}>
-            Saved to <span className="mono">{csvPath}</span>.
+            Saved to <span className="mono">{savedCsv}</span>.
           </p>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
@@ -130,7 +138,7 @@ export function RenameScreen() {
         )}
         {outcome.failed.length > 0 && (
           <div role="alert" className="alert bad">
-            <b>{plural(outcome.failed.length, "file")} couldn't be {mode === "copyToFolder" ? "copied" : "renamed"}:</b>
+            <b>{plural(outcome.failed.length, "file")} couldn't be {savedMode === "copyToFolder" ? "copied" : "renamed"}:</b>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {outcome.failed.map((f) => (
                 <li key={f.fileId}>
@@ -141,6 +149,11 @@ export function RenameScreen() {
           </div>
         )}
         <ButtonRow
+          leading={
+            <button type="button" className="btn" onClick={() => dispatch({ type: "saved", saved: null })}>
+              Save another way
+            </button>
+          }
           others={
             outcome.historyId
               ? [
@@ -165,7 +178,15 @@ export function RenameScreen() {
 
   return (
     <section className="screen" aria-labelledby="rename-title">
-      <h1 id="rename-title">Save the results</h1>
+      <h1 id="rename-title" tabIndex={-1}>
+        Save the results
+      </h1>
+      {savedEarlier && (
+        <p className="alert warn" style={{ margin: 0 }}>
+          These results were saved before. Files renamed then are no longer at the names they were identified under, and
+          are listed below if they are part of this save.
+        </p>
+      )}
       <div className="modes" role="radiogroup" aria-label="How to save">
         {MODES.map((m) => (
           <label key={m.kind} className={`card mode${mode === m.kind ? " selected" : ""}`}>
@@ -191,7 +212,15 @@ export function RenameScreen() {
           />
         )}
         {mode === "exportList" && (
-          <PathField label="Save list as" value={csvPath} onChange={setCsvPath} onBrowse={() => void pickCsv()} />
+          <PathField
+            label="Save list as"
+            value={csvPath}
+            onChange={(v) => {
+              setCsvPath(v);
+              setCsvChosen(false);
+            }}
+            onBrowse={() => void pickCsv()}
+          />
         )}
         <label className="label">
           Naming
@@ -270,14 +299,14 @@ export function RenameScreen() {
         </p>
       )}
       <ButtonRow
-        others={[
-          <button key="back" type="button" className="btn" onClick={() => dispatch({ type: "go", step: "review" })}>
+        leading={
+          <button type="button" className="btn" onClick={() => dispatch({ type: "go", step: "review" })}>
             Back
-          </button>,
-        ]}
+          </button>
+        }
         primary={
           <button type="button" className="btn primary" disabled={blocked} onClick={() => void apply()}>
-            {applying ? "Saving…" : primaryLabel}
+            {applying ? "Saving…" : planning && plan ? "Updating preview…" : primaryLabel}
           </button>
         }
       />

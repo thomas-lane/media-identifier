@@ -68,6 +68,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | csv | Unlicense OR MIT | CSV export |
 | libc (macOS only) | MIT OR Apache-2.0 | `renamex_np` for renames that never replace a file |
 | windows-sys (Windows only) | MIT OR Apache-2.0 | `MoveFileExW` for renames that never replace a file |
+| unicode-normalization | MIT OR Apache-2.0 | comparing file names the way macOS and Windows file systems do (NFC) |
 
 ## branding
 

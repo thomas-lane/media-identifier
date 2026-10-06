@@ -17,6 +17,21 @@ pub(crate) fn exists(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok()
 }
 
+/// The modification time of `meta`, nanoseconds since the Unix epoch.
+pub(crate) fn modified_of(meta: &fs::Metadata) -> Option<i64> {
+    let since = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    i64::try_from(since.as_nanos()).ok()
+}
+
+/// The modification time of the file at `path`, nanoseconds since the Unix epoch.
+pub(crate) fn modified_ns(path: &Path) -> Option<i64> {
+    modified_of(&fs::metadata(path).ok()?)
+}
+
 /// Moves `from` to `to`, failing with `AlreadyExists` when `to` exists.
 pub(crate) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     match platform::rename_exclusive(from, to) {

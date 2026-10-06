@@ -4,18 +4,24 @@
 //! *entry*; each file system change in it is an *operation* written as two records: an `intent`
 //! (what is about to happen) before the change, flushed to disk, and `done` or `failed` after it.
 //! An intent with neither, left by a crash or power cut, is resolved by looking at the disk (for a
-//! move: is the source gone and the target there?). Replaying the records therefore tells where
-//! every file is now, which is what History shows and what undo starts from, even when a save
-//! was interrupted half way.
+//! move: is the source gone and the target there?). The next save or undo settles each such
+//! intent once, by appending the `done` or `failed` it lacks, so a later change on disk (another
+//! save writing the same target) cannot change what the interrupted save is said to have done.
+//! Replaying the records therefore tells where every file is now, which is what History shows and
+//! what undo starts from, even when a save was interrupted half way.
+//!
+//! A record cut short (the disk filled up, or the power failed during the write) is left as a
+//! partial last line. Before appending, the writer ends such a line with a newline, so the next
+//! record starts on a line of its own and only the damaged record is lost.
 //!
 //! Record kinds (`"kind"`): `begin` (entry id, time, show, folder, mode), `intent` (operation
 //! number, action, phase, paths, size), `done`, `failed`, `undone`. Actions: `move`, `copy`,
 //! `create` (a subtitle file), `mkdir`, `remove`, `removeDir`. Phase `apply` is the save itself,
 //! `undo` the undo, so History can show what a save did even after it was undone.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
@@ -27,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::RenameError;
 use crate::apply::{PlannedMove, move_set};
-use crate::fsops::{describe, exists};
+use crate::fsops::{describe, exists, modified_ns};
 
 /// Serialises all journal writers in this process: one save or undo at a time.
 static LOCK: Mutex<()> = Mutex::new(());
@@ -90,6 +96,12 @@ pub(crate) struct Intent {
     /// Size of the file moved, copied or created, used to verify it on undo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+    /// Modification time of that file, nanoseconds since the Unix epoch, also used to verify it
+    /// on undo: editors that rewrite tags in place often keep a file's size. For a move it is
+    /// recorded in the intent (a rename keeps it); for a copy or created file in the `done`
+    /// record, once the file exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_ns: Option<i64>,
 }
 
 impl Intent {
@@ -103,6 +115,7 @@ impl Intent {
             to: to.into(),
             temp: None,
             size_bytes: None,
+            modified_ns: None,
         }
     }
 }
@@ -130,6 +143,8 @@ enum Record {
     Done {
         entry: String,
         op: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        modified_ns: Option<i64>,
     },
     Failed {
         entry: String,
@@ -162,6 +177,23 @@ fn journal_error(e: impl std::fmt::Display) -> RenameError {
     RenameError::Journal(e.to_string())
 }
 
+/// Ends a partial last line (a record cut short) with a newline, so the next record is readable.
+fn end_partial_line(file: &mut File) -> io::Result<()> {
+    let len = file.metadata()?.len();
+    if len == 0 {
+        return Ok(());
+    }
+    let mut last = [0u8; 1];
+    file.seek(SeekFrom::Start(len - 1))?;
+    file.read_exact(&mut last)?;
+    if last[0] != b'\n' {
+        // Appends go to the end whatever the read position.
+        file.write_all(b"\n")?;
+        file.sync_data()?;
+    }
+    Ok(())
+}
+
 /// Writes one entry's records. The `begin` record is written just before the first operation,
 /// so a save that changes nothing leaves no entry.
 pub(crate) struct EntryWriter {
@@ -170,9 +202,24 @@ pub(crate) struct EntryWriter {
     entry: String,
     next_op: u32,
     pending_begin: Option<Record>,
+    /// Tests: the number of records written before every write fails, as on a full disk.
+    #[cfg(test)]
+    pub(crate) writes_left: Option<u32>,
 }
 
 impl EntryWriter {
+    fn new(path: &Path, entry: String, next_op: u32, pending_begin: Option<Record>) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            file: None,
+            entry,
+            next_op,
+            pending_begin,
+            #[cfg(test)]
+            writes_left: None,
+        }
+    }
+
     /// The entry's id.
     pub fn entry(&self) -> &str {
         &self.entry
@@ -184,15 +231,24 @@ impl EntryWriter {
     }
 
     fn write(&mut self, record: &Record) -> crate::Result<()> {
+        #[cfg(test)]
+        if let Some(left) = self.writes_left.as_mut() {
+            if *left == 0 {
+                return Err(journal_error("No space left on device"));
+            }
+            *left -= 1;
+        }
         if self.file.is_none() {
             if let Some(parent) = self.path.parent() {
                 fs::create_dir_all(parent).map_err(journal_error)?;
             }
-            let file = OpenOptions::new()
+            let mut file = OpenOptions::new()
                 .create(true)
+                .read(true)
                 .append(true)
                 .open(&self.path)
                 .map_err(journal_error)?;
+            end_partial_line(&mut file).map_err(journal_error)?;
             self.file = Some(file);
         }
         let file = self.file.as_mut().expect("opened above");
@@ -221,9 +277,15 @@ impl EntryWriter {
 
     /// Marks an operation done.
     pub fn done(&mut self, op: u32) -> crate::Result<()> {
+        self.done_at(op, None)
+    }
+
+    /// Marks an operation done, recording the modification time of the file it produced.
+    pub fn done_at(&mut self, op: u32, modified_ns: Option<i64>) -> crate::Result<()> {
         let record = Record::Done {
             entry: self.entry.clone(),
             op,
+            modified_ns,
         };
         self.write(&record)
     }
@@ -273,8 +335,20 @@ struct MoveTrack {
     file_id: FileId,
     original: PathBuf,
     size: Option<u64>,
+    modified_ns: Option<i64>,
     current: PathBuf,
     after_save: PathBuf,
+}
+
+impl MoveTrack {
+    /// Whether the file is back under its original name although the journal does not say so:
+    /// its current path is gone and the original holds a file of the recorded size. This is what
+    /// a rename cut short by a journal error leaves after moving its files back.
+    fn is_back_home(&self) -> bool {
+        self.current != self.original
+            && !exists(&self.current)
+            && check_unchanged(&self.original, self.size, self.modified_ns).is_ok()
+    }
 }
 
 /// A file the save created (a copy or a subtitle file).
@@ -284,9 +358,17 @@ struct CreatedTrack {
     source: Option<PathBuf>,
     path: PathBuf,
     size: Option<u64>,
+    modified_ns: Option<i64>,
     is_copy: bool,
     made_by_save: bool,
     present: bool,
+}
+
+/// A temporary copy file left by an interrupted or failed copy.
+#[derive(Debug, Clone)]
+struct Leftover {
+    source: Option<PathBuf>,
+    temp: PathBuf,
 }
 
 /// The effect of an entry's operations.
@@ -296,8 +378,10 @@ struct Effects {
     created: Vec<CreatedTrack>,
     /// Folders the save created that still exist, in creation order.
     dirs: Vec<PathBuf>,
-    /// Temporary copy files left by an interrupted or failed copy.
-    leftovers: Vec<PathBuf>,
+    /// Every folder the save created, including ones since removed.
+    made_dirs: HashSet<PathBuf>,
+    /// Temporary copy files still on disk.
+    leftovers: Vec<Leftover>,
 }
 
 impl EntryState {
@@ -310,7 +394,12 @@ impl EntryState {
                 Action::Move => {
                     intent.from.as_deref().is_some_and(|f| !exists(f)) && exists(&intent.to)
                 }
-                Action::Copy | Action::Create | Action::Mkdir => exists(&intent.to),
+                // A copy is renamed from its temporary file as its last step, so while the
+                // temporary file exists the copy was not finished.
+                Action::Copy => {
+                    exists(&intent.to) && intent.temp.as_deref().is_none_or(|t| !exists(t))
+                }
+                Action::Create | Action::Mkdir => exists(&intent.to),
                 Action::Remove | Action::RemoveDir => !exists(&intent.to),
             },
         }
@@ -328,6 +417,7 @@ impl EntryState {
                         file_id: intent.file_id.clone().unwrap_or(FileId(String::new())),
                         original: from.clone(),
                         size: intent.size_bytes,
+                        modified_ns: intent.modified_ns,
                         current: from.clone(),
                         after_save: from,
                     });
@@ -343,6 +433,7 @@ impl EntryState {
                             source: intent.from.clone(),
                             path: intent.to.clone(),
                             size: intent.size_bytes,
+                            modified_ns: intent.modified_ns,
                             is_copy: intent.action == Action::Copy,
                             made_by_save: intent.phase == Phase::Apply,
                             present: true,
@@ -351,17 +442,21 @@ impl EntryState {
                     if let Some(temp) = &intent.temp
                         && exists(temp)
                     {
-                        fx.leftovers.push(temp.clone());
+                        fx.leftovers.push(Leftover {
+                            source: intent.from.clone(),
+                            temp: temp.clone(),
+                        });
                     }
                 }
                 Action::Remove if happened => {
                     for c in fx.created.iter_mut().filter(|c| c.path == intent.to) {
                         c.present = false;
                     }
-                    fx.leftovers.retain(|p| *p != intent.to);
+                    fx.leftovers.retain(|l| l.temp != intent.to);
                 }
                 Action::Mkdir if happened && intent.phase == Phase::Apply => {
-                    fx.dirs.push(intent.to.clone())
+                    fx.dirs.push(intent.to.clone());
+                    fx.made_dirs.insert(intent.to.clone());
                 }
                 Action::RemoveDir if happened => fx.dirs.retain(|d| *d != intent.to),
                 _ => {}
@@ -378,7 +473,8 @@ impl EntryState {
             .values()
             .filter_map(|t| {
                 let at = if undone { &t.after_save } else { &t.current };
-                (*at != t.original).then(|| HistoryItem {
+                let moved = *at != t.original && (undone || !t.is_back_home());
+                moved.then(|| HistoryItem {
                     from: t.original.clone(),
                     to: at.clone(),
                 })
@@ -393,6 +489,13 @@ impl EntryState {
                     to: c.path.clone(),
                 }),
         );
+        // A copy cut short leaves its temporary file; listing it lets undo remove it.
+        if !undone {
+            items.extend(fx.leftovers.iter().map(|l| HistoryItem {
+                from: l.source.clone().unwrap_or_default(),
+                to: l.temp.clone(),
+            }));
+        }
         HistoryEntry {
             id: HistoryId(self.id.clone()),
             created_at_ms: self.created_at_ms,
@@ -416,30 +519,63 @@ impl Journal {
         &self.path
     }
 
-    /// Takes the process-wide lock and prepares a new entry; nothing is written until the first
-    /// operation.
+    /// Takes the process-wide lock, settles unfinished operations of earlier entries, and
+    /// prepares a new entry; nothing is written for it until the first operation.
     pub(crate) fn start(
         &self,
         show_name: &str,
         folder: &Path,
         mode: SaveModeKind,
-    ) -> (MutexGuard<'static, ()>, EntryWriter) {
+    ) -> crate::Result<(MutexGuard<'static, ()>, EntryWriter)> {
         let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.settle()?;
         let entry = new_entry_id();
-        let writer = EntryWriter {
-            path: self.path.clone(),
-            file: None,
+        let begin = Record::Begin {
             entry: entry.clone(),
-            next_op: 0,
-            pending_begin: Some(Record::Begin {
-                entry,
-                created_at_ms: now_ms(),
-                show_name: show_name.to_owned(),
-                folder: folder.to_path_buf(),
-                mode,
-            }),
+            created_at_ms: now_ms(),
+            show_name: show_name.to_owned(),
+            folder: folder.to_path_buf(),
+            mode,
         };
-        (guard, writer)
+        let writer = EntryWriter::new(&self.path, entry, 0, Some(begin));
+        Ok((guard, writer))
+    }
+
+    /// Reads every entry and appends a `done` or `failed` record for each operation that has
+    /// neither (the app stopped during it), decided from the disk now. Call with the lock held.
+    ///
+    /// Settling before anything else changes the disk keeps an interrupted copy from later being
+    /// credited with a file another save wrote at the same path. If another process is still
+    /// running that operation, its own `done` or `failed` record comes later and replaces this
+    /// one, because replay keeps the last status recorded for an operation.
+    fn settle(&self) -> crate::Result<Vec<EntryState>> {
+        let mut entries = self.read()?;
+        for entry in &mut entries {
+            let mut writer: Option<EntryWriter> = None;
+            for (op, intent, status) in &mut entry.ops {
+                if *status != Status::Unknown {
+                    continue;
+                }
+                let happened = EntryState::happened(intent, Status::Unknown);
+                let w = writer
+                    .get_or_insert_with(|| EntryWriter::new(&self.path, entry.id.clone(), 0, None));
+                if happened {
+                    let modified = match intent.action {
+                        Action::Copy | Action::Create => modified_ns(&intent.to),
+                        _ => None,
+                    };
+                    w.done_at(*op, modified)?;
+                    if modified.is_some() {
+                        intent.modified_ns = modified;
+                    }
+                    *status = Status::Done;
+                } else {
+                    w.failed(*op)?;
+                    *status = Status::Failed;
+                }
+            }
+        }
+        Ok(entries)
     }
 
     /// All entries that changed something, newest first.
@@ -466,9 +602,12 @@ impl Journal {
     ///   an existing file. A file is moved back only when it is still where the save put it and
     ///   still has the size it had then; afterwards the original name is checked to hold a file
     ///   of that size.
-    /// - Copies and subtitle files the save created are deleted only when their size is
-    ///   unchanged; ones already deleted are skipped. Originals are never touched by undoing a
-    ///   copy.
+    /// - Copies and subtitle files the save created are deleted only when their size and
+    ///   modification time are unchanged. One that is gone is skipped as deleted by the user when
+    ///   the folder it was saved in is still reachable; when that folder is missing (a drive or
+    ///   network share that is not connected), it is reported as failed, so undo can be retried
+    ///   once the drive is back. Originals are never touched by undoing a copy.
+    /// - Temporary files left by an interrupted copy are deleted.
     /// - Folders the save created are deleted when they are empty, or hold only files the
     ///   operating system adds by itself (`.DS_Store`, `Thumbs.db`).
     ///
@@ -479,7 +618,7 @@ impl Journal {
     pub fn undo(&self, id: &HistoryId) -> crate::Result<UndoOutcome> {
         let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = self
-            .read()?
+            .settle()?
             .into_iter()
             .find(|e| e.id == id.0)
             .ok_or_else(|| RenameError::NotFound(id.0.clone()))?;
@@ -490,29 +629,25 @@ impl Journal {
             });
         }
         let fx = state.effects();
-        let mut writer = EntryWriter {
-            path: self.path.clone(),
-            file: None,
-            entry: state.id.clone(),
-            next_op: state.ops.iter().map(|(op, ..)| op + 1).max().unwrap_or(0),
-            pending_begin: None,
-        };
+        let next_op = state.ops.iter().map(|(op, ..)| op + 1).max().unwrap_or(0);
+        let mut writer = EntryWriter::new(&self.path, state.id.clone(), next_op, None);
         let mut failed = Vec::new();
         let mut restored = 0u32;
 
         // Renamed files go back.
         let mut moves = Vec::new();
         for (item, track) in &fx.moves {
-            if track.current == track.original {
+            if track.current == track.original || track.is_back_home() {
                 continue;
             }
-            match check_unchanged(&track.current, track.size) {
-                Ok(size) => moves.push(PlannedMove {
+            match check_unchanged(&track.current, track.size, track.modified_ns) {
+                Ok((size, modified_ns)) => moves.push(PlannedMove {
                     item: *item,
                     file_id: track.file_id.clone(),
                     from: track.current.clone(),
                     to: track.original.clone(),
                     size,
+                    modified_ns,
                 }),
                 Err(message) => failed.push(OperationFailure {
                     file_id: track.file_id.clone(),
@@ -535,9 +670,20 @@ impl Journal {
         }
 
         // Copies and subtitle files are deleted.
-        // A created file the user already deleted needs nothing.
-        for created in fx.created.iter().filter(|c| c.present && exists(&c.path)) {
-            match check_unchanged(&created.path, created.size) {
+        for created in fx.created.iter().filter(|c| c.present) {
+            if !exists(&created.path) {
+                if !folder_reachable(&created.path, &fx.made_dirs) {
+                    failed.push(OperationFailure {
+                        file_id: created.file_id.clone(),
+                        path: created.path.clone(),
+                        message: "the drive or folder it was saved to is not available; connect it and undo again"
+                            .to_owned(),
+                    });
+                }
+                // Otherwise the user already deleted it, which needs nothing.
+                continue;
+            }
+            match check_unchanged(&created.path, created.size, created.modified_ns) {
                 Ok(_) => {
                     let mut intent = Intent::new(Action::Remove, Phase::Undo, &created.path);
                     intent.file_id = Some(created.file_id.clone());
@@ -566,7 +712,8 @@ impl Journal {
                 }),
             }
         }
-        for temp in &fx.leftovers {
+        for leftover in &fx.leftovers {
+            let temp = &leftover.temp;
             let op = writer.intent(Intent::new(Action::Remove, Phase::Undo, temp))?;
             match fs::remove_file(temp) {
                 Ok(()) => writer.done(op)?,
@@ -641,8 +788,18 @@ impl Journal {
                         entries[i].ops.push((op, intent, Status::Unknown));
                     }
                 }
-                Record::Done { entry, op } => {
-                    set_status(&mut entries, &index, &entry, op, Status::Done)
+                Record::Done {
+                    entry,
+                    op,
+                    modified_ns,
+                } => {
+                    set_status(&mut entries, &index, &entry, op, Status::Done);
+                    if let Some(m) = modified_ns
+                        && let Some(&i) = index.get(&entry)
+                        && let Some(slot) = entries[i].ops.iter_mut().find(|(o, ..)| *o == op)
+                    {
+                        slot.1.modified_ns = Some(m);
+                    }
                 }
                 Record::Failed { entry, op } => {
                     set_status(&mut entries, &index, &entry, op, Status::Failed)
@@ -672,18 +829,38 @@ fn set_status(
     }
 }
 
-/// Checks that `path` is a file of the recorded size; returns its size.
-fn check_unchanged(path: &Path, size: Option<u64>) -> Result<u64, String> {
+/// Checks that `path` is a file of the recorded size and modification time (each when
+/// recorded); returns its size and modification time.
+fn check_unchanged(
+    path: &Path,
+    size: Option<u64>,
+    modified: Option<i64>,
+) -> Result<(u64, Option<i64>), String> {
+    let changed = || "it changed since it was saved, so it was left as it is".to_owned();
     match fs::metadata(path) {
         Ok(meta) if !meta.is_file() => Err("it is no longer a file".to_owned()),
-        Ok(meta) => match size {
-            Some(expected) if expected != meta.len() => {
-                Err("it changed since it was saved, so it was left as it is".to_owned())
+        Ok(meta) => {
+            if size.is_some_and(|expected| expected != meta.len()) {
+                return Err(changed());
             }
-            _ => Ok(meta.len()),
-        },
+            let now = crate::fsops::modified_of(&meta);
+            if modified.is_some() && now != modified {
+                return Err(changed());
+            }
+            Ok((meta.len(), now))
+        }
         Err(e) => Err(describe(&e)),
     }
+}
+
+/// Whether the folder a created file was saved in can be reached: the nearest folder above it
+/// that the save did not create exists. When that folder is missing too, the drive or share is
+/// most likely not connected, rather than the file deleted.
+fn folder_reachable(path: &Path, made_dirs: &HashSet<PathBuf>) -> bool {
+    path.ancestors()
+        .skip(1)
+        .find(|d| !made_dirs.contains(*d))
+        .is_some_and(Path::is_dir)
 }
 
 fn is_effectively_empty(dir: &Path) -> bool {

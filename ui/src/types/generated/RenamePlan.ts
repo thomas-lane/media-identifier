@@ -2,6 +2,7 @@
 import type { JobId } from "./JobId";
 import type { PlanConflict } from "./PlanConflict";
 import type { RenameItem } from "./RenameItem";
+import type { RenamePlanRequest } from "./RenamePlanRequest";
 import type { SaveMode } from "./SaveMode";
 import type { UntouchedFile } from "./UntouchedFile";
 
@@ -13,6 +14,11 @@ export type RenamePlan = {
  * The job.
  */
 jobId: JobId, 
+/**
+ * The request the plan was built from. Applying builds the plan again from this request
+ * and the job's own record, and refuses when the result differs from this plan.
+ */
+request: RenamePlanRequest, 
 /**
  * How to save.
  */

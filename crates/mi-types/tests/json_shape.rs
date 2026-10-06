@@ -55,6 +55,16 @@ fn struct_fields_are_camel_case_and_newtypes_are_plain_strings() {
 fn every_tagged_value_round_trips() {
     let plan = RenamePlan {
         job_id: JobId("j".into()),
+        request: RenamePlanRequest {
+            job_id: JobId("j".into()),
+            decisions: vec![],
+            mode: SaveMode::ExportList {
+                destination: "/rips/list.csv".into(),
+                replace: true,
+            },
+            naming: NamingScheme::Kodi,
+            save_heard_subtitles: false,
+        },
         mode: SaveMode::RenameInPlace {
             root: "/rips/disc1".into(),
         },
@@ -64,10 +74,19 @@ fn every_tagged_value_round_trips() {
             path: "/rips/disc1/title_t00.mkv".into(),
             reason: UntouchedReason::PlayAll,
         }],
-        conflicts: vec![PlanConflict::DuplicateTarget {
-            file_ids: vec![FileId("a".into()), FileId("b".into())],
-            path: "/x".into(),
-        }],
+        conflicts: vec![
+            PlanConflict::DuplicateTarget {
+                file_ids: vec![FileId("a".into()), FileId("b".into())],
+                path: "/x".into(),
+            },
+            PlanConflict::SourceChanged {
+                file_id: FileId("a".into()),
+                path: "/a".into(),
+            },
+            PlanConflict::ListExists {
+                path: "/rips/list.csv".into(),
+            },
+        ],
     };
     let text = serde_json::to_string(&plan).unwrap();
     assert_eq!(serde_json::from_str::<RenamePlan>(&text).unwrap(), plan);

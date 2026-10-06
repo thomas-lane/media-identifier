@@ -65,6 +65,11 @@ pub enum SaveMode {
     ExportList {
         /// CSV file path.
         destination: PathBuf,
+        /// Replace a file already at `destination`. The window sets it only for a path the user
+        /// picked in the save dialog, which asked before replacing; a typed path never replaces
+        /// a file.
+        #[serde(default)]
+        replace: bool,
     },
 }
 
@@ -110,6 +115,9 @@ pub struct RenameItem {
     pub title: String,
     /// Path of the `.srt` to write from what was heard, when requested.
     pub heard_subtitles_to: Option<PathBuf>,
+    /// Size of the file when it was scanned. Saving leaves a file whose size differs alone,
+    /// because a different file may now have the scanned name.
+    pub size_bytes: u64,
 }
 
 /// Why a file is left where it is.
@@ -158,6 +166,20 @@ pub enum PlanConflict {
         /// The shared target.
         path: PathBuf,
     },
+    /// The file is no longer at its scanned path, or has a different size: it was moved,
+    /// renamed or replaced since it was identified (for example by an earlier save of the same
+    /// job, or by a new rip with the same file names).
+    SourceChanged {
+        /// The file.
+        file_id: FileId,
+        /// Its scanned path.
+        path: PathBuf,
+    },
+    /// The CSV file of an export already exists and was not chosen in the save dialog.
+    ListExists {
+        /// The CSV file path.
+        path: PathBuf,
+    },
 }
 
 /// A preview of what saving will do.
@@ -166,6 +188,9 @@ pub enum PlanConflict {
 pub struct RenamePlan {
     /// The job.
     pub job_id: JobId,
+    /// The request the plan was built from. Applying builds the plan again from this request
+    /// and the job's own record, and refuses when the result differs from this plan.
+    pub request: RenamePlanRequest,
     /// How to save.
     pub mode: SaveMode,
     /// Planned renames or copies, sorted by target path.

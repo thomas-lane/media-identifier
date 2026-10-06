@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use mi_media::SidecarLookup;
-use mi_rename::{Journal, PlanContext};
+use mi_rename::{DiskView, Journal, PlanContext};
 use mi_sources::ApiKeys;
 use mi_transcribe::ModelStore;
 use mi_types::{
@@ -323,42 +323,75 @@ impl Engine {
             files: &record.files,
             matches: &record.results.matches,
         };
-        Ok(mi_rename::build_plan(context, request, &|p: &Path| {
-            p.exists()
-        })?)
+        Ok(mi_rename::build_plan(context, request, DiskView::real())?)
     }
 
-    /// Applies a plan (rename, copy or CSV export) after checking it belongs to the job: every
-    /// item must be one of the job's files at its scanned path, and every target an absolute path
-    /// without `.` or `..` parts.
+    /// Applies a plan (rename, copy or CSV export).
+    ///
+    /// The plan is built again from its request and the job's own record, with the disk as it is
+    /// now, and that rebuilt plan is what is applied. The plan sent must equal it (same mode,
+    /// items, untouched files and conflicts), so a plan changed in the window, or one built for
+    /// settings the window has since changed, is refused with `Invalid` instead of applied; every
+    /// target must also be an absolute path without `.` or `..` parts. Conflicts that appeared
+    /// since the preview are refused as conflicts.
     pub async fn apply_rename(&self, plan: RenamePlan) -> crate::Result<RenameOutcome> {
+        let stale = || {
+            CoreError::Invalid(
+                "The rename preview no longer matches the identified files or the chosen settings. Check the preview and try again."
+                    .to_owned(),
+            )
+        };
+        if plan.request.job_id != plan.job_id {
+            return Err(stale());
+        }
         let record = self
             .jobs
             .get(&plan.job_id)
             .ok_or_else(|| CoreError::NotFound(format!("job {}", plan.job_id.0)))?;
-        let (show_name, transcripts) = {
+        let (show, episodes, files, matches, show_name, transcripts) = {
             let r = record.lock().unwrap_or_else(|p| p.into_inner());
-            for item in &plan.items {
-                let known = r
-                    .files
-                    .iter()
-                    .any(|f| f.id == item.file_id && f.path == item.from);
-                let targets_ok = is_plain_absolute(&item.to)
-                    && item
-                        .heard_subtitles_to
-                        .as_deref()
-                        .is_none_or(is_plain_absolute);
-                if !known || !targets_ok {
-                    return Err(CoreError::Invalid(
-                        "The rename preview no longer matches the identified files. Open the preview again."
-                            .to_owned(),
-                    ));
-                }
-            }
-            (r.results.request.show.name.clone(), r.transcripts.clone())
+            (
+                r.results.request.show.clone(),
+                r.results.episodes.clone(),
+                r.files.clone(),
+                r.results.matches.clone(),
+                r.results.request.show.name.clone(),
+                r.transcripts.clone(),
+            )
         };
+        let request = plan.request.clone();
+        let rebuilt = self
+            .runtime
+            .spawn_blocking(move || {
+                let context = PlanContext {
+                    show: &show,
+                    episodes: &episodes,
+                    files: &files,
+                    matches: &matches,
+                };
+                mi_rename::build_plan(context, &request, DiskView::real())
+            })
+            .await
+            .map_err(|e| CoreError::Job(e.to_string()))??;
+        let same = rebuilt.mode == plan.mode
+            && rebuilt.items == plan.items
+            && rebuilt.untouched == plan.untouched;
+        let targets_ok = rebuilt.items.iter().all(|item| {
+            is_plain_absolute(&item.to)
+                && item
+                    .heard_subtitles_to
+                    .as_deref()
+                    .is_none_or(is_plain_absolute)
+        });
+        if !same || !targets_ok {
+            return Err(stale());
+        }
+        if !rebuilt.conflicts.is_empty() {
+            return Err(mi_rename::RenameError::Conflicts(rebuilt.conflicts.len()).into());
+        }
         let journal = self.journal.clone();
-        let applied_plan = plan.clone();
+        let applied_plan = rebuilt;
+        let mode = applied_plan.mode.clone();
         let outcome = self
             .runtime
             .spawn_blocking(move || {
@@ -371,7 +404,7 @@ impl Engine {
             .await
             .map_err(|e| CoreError::Job(e.to_string()))??;
         let saved = outcome.completed > 0
-            || (matches!(plan.mode, SaveMode::ExportList { .. }) && outcome.failed.is_empty());
+            || (matches!(mode, SaveMode::ExportList { .. }) && outcome.failed.is_empty());
         if saved {
             let mut r = record.lock().unwrap_or_else(|p| p.into_inner());
             r.saved = true;

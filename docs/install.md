@@ -7,8 +7,8 @@ from the [Releases page](https://github.com/thomas-lane/media-identifier/release
 
 | System | File |
 |---|---|
-| macOS (Apple Silicon) | `Media Identifier_<version>_aarch64.dmg` |
-| Windows (64-bit) | `Media Identifier_<version>_x64-setup.exe` |
+| macOS (Apple Silicon) | `Media.Identifier_<version>_aarch64.dmg` |
+| Windows (64-bit) | `Media.Identifier_<version>_x64-setup.exe` |
 
 The builds are not code-signed: signing requires paid certificates from Apple and from a
 Windows certificate authority, which this project does not use. Each system therefore asks you
@@ -83,6 +83,6 @@ When a new version is found, a dialog shows what is new and asks before anything
 
 On Windows the installer runs in a small progress window during the relaunch.
 
-When the update service cannot be reached (offline, or while the project's repository is
-private), background checks stay silent and **Check now** shows "Couldn't check for updates".
+When the update service cannot be reached (for example while offline), background checks stay
+silent and **Check now** shows "Couldn't check for updates".
 Download new versions from the Releases page instead.

@@ -312,10 +312,11 @@ To publish a version:
    GitHub serves `releases/latest` from the newest published release that is not a draft or
    pre-release, so installed copies see the version only once it is published.
 
-The update check sends no access token. GitHub answers requests for a private repository's
-release files only with one, so while the repository is private every check fails: background
-checks log the failure and "Check now" shows "Couldn't check for updates". Putting a token into
-the app is not an option, because anyone with a copy could read it.
+The update check sends no access token, so updates work only while the repository is public:
+GitHub serves a private repository's release files only to requests that carry a token, and a
+token built into the app could be read by anyone with a copy. `latest.json` links each update file
+through GitHub's API (`api.github.com/repos/…/releases/assets/<id>`); the updater requests it with
+`Accept: application/octet-stream`, which makes GitHub return the file itself.
 
 A release build can be made locally the same way (the signing key variables are needed only
 because `createUpdaterArtifacts` is on):

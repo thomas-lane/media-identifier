@@ -21,31 +21,33 @@ the renames. Audio and video never leave your computer.
 
 The Review screen, showing the app's built-in sample data.
 
-**Install:** no release has been published yet; the [install guide](docs/install.md) describes
-the builds (they are unsigned, so the first launch needs one extra step).
+**Install:** download the latest version from the
+[Releases page](https://github.com/thomas-lane/media-identifier/releases/latest): the `.dmg` for
+macOS or the `-setup.exe` for Windows. The apps are unsigned, so the first launch needs one extra
+step; the [install guide](docs/install.md) shows it.
 
 ## Status
 
-Version 0.1.0 has not been released. The GitHub repository and its releases are private, so
-installed copies cannot check for updates. Everything below was run on one Apple Silicon Mac
-(macOS); nothing has been built or run on Windows, and CI and the release workflows have not run
-on GitHub yet.
+Version 0.1.0 is released. CI builds and tests every push on macOS and Windows, and the release
+workflow builds both installers. The app itself has been run only on an Apple Silicon Mac; the
+Windows build passes every automated test on GitHub's Windows runners but has not been run on a
+Windows PC.
 
 | Component | State |
 |---|---|
 | Folder scan, probing, play-all detection, audio decoding | Tested on generated files and on a synthetic disc; real MakeMKV rips untested |
-| ffmpeg/ffprobe sidecars | macOS arm64 built and tested; Windows build options compiled with mingw-w64 but never run |
+| ffmpeg/ffprobe sidecars | Built by the release workflow for both systems; macOS sidecars tested on a Mac, Windows sidecars bundled but not run |
 | Speech recognition (whisper.cpp on Metal) | Fast and Accurate models run on generated speech and real episodes |
 | Model download | The release app downloaded and verified the Accurate model on first launch; resume tested against a local server |
 | Episode lists and reference text | TVmaze and LRCLIB called live; SubDL and TMDb tested only against hand-written responses (no key yet) |
 | Matching, disc order, confidence | Tested on simulated speech errors and synthetic audio; end-to-end results below |
 | Identification pipeline | Tested with scripted services, and end to end on the files below |
-| Rename, copy, CSV export, undo | Tested on temporary folders, including interrupted saves and journal write failures; Windows untested |
+| Rename, copy, CSV export, undo | Tested on temporary folders on macOS and Windows, including interrupted saves and journal write failures |
 | UI | All screens tested in jsdom against the mock backend; the release app starts and shows the Start screen; a full identification through the window has not been run |
-| macOS release bundle | `.app`, `.dmg` and the signed updater file built locally; unsigned (ad-hoc) |
-| Auto-update | Launch-time check fails quietly while releases are private; download and install untested until the repository is public |
-| CI and release workflows | Lint-clean; never run on GitHub (including the Windows static-runtime check and the notices check) |
-| Windows build | Static C/C++ runtime and the processor check are untested on Windows |
+| macOS release | `.dmg` and signed update file built by the release workflow; unsigned (ad-hoc); the downloaded app starts |
+| Windows release | Per-user installer and signed update file built by the release workflow; needs no Visual C++ runtime DLLs (checked in the workflow); not run on a Windows PC |
+| Auto-update | The update feed and both update files download without an account and verify against the app's key; installing an update has not been exercised yet (it needs a second release) |
+| Windows processor check | Untested on Windows |
 
 End-to-end checks with the whole pipeline (command-line example, same engine as the app):
 

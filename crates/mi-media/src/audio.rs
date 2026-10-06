@@ -227,8 +227,10 @@ pub fn stream_audio(
         samples.clear();
         samples.extend(
             pending[..whole]
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b)),
         );
         pending.drain(..whole);
         if samples.is_empty() {

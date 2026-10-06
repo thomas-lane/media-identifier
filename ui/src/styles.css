@@ -173,6 +173,14 @@ a {
   min-height: 0;
 }
 
+/* A screen that scrolls as a whole keeps its full height inside the scrolling .shell-main, so its
+   bottom padding scrolls into view instead of being squeezed out, and the extra space lets the
+   last section come to rest above the window edge. */
+.screen:not(.fill) {
+  flex-shrink: 0;
+  padding-bottom: 48px;
+}
+
 .screen-head {
   display: flex;
   flex-wrap: wrap;

@@ -186,9 +186,9 @@ jobs:
         shell: msys2 {0}
         run: scripts/build-ffmpeg.sh --verify --target ${{ matrix.target }}
 
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # pinned by rust-toolchain.toml
         with:
-          toolchain: stable
+          toolchain: 1.99.0
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2

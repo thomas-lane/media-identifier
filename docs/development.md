@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Rust (stable, via rustup; `rust-toolchain.toml` selects the channel and components).
+- Rust via rustup. `rust-toolchain.toml` pins the exact version (1.99.0) and components, so local builds and CI run the same compiler and Clippy lints; a newer Clippy can add lints that fail `-D warnings`.
 - Node.js 22 or later and npm.
 - CMake (whisper.cpp is compiled by the `whisper-rs-sys` build script).
 - macOS: Xcode command-line tools. Windows: Visual Studio Build Tools with the C++ workload.

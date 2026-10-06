@@ -61,8 +61,20 @@ jobs:
       - name: Rust lints
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # The media tests make their fixture files with a full ffmpeg and run the code against it;
+      # MI_REQUIRE_FFMPEG_TESTS=1 turns a missing ffmpeg into a failure instead of a skip.
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+
       - name: Rust tests
         run: cargo test --workspace
+        env:
+          MI_REQUIRE_FFMPEG_TESTS: "1"
 
       - name: Third-party notices are current
         run: node scripts/third-party-notices.mjs --check

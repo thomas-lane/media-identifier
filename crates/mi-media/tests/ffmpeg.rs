@@ -64,10 +64,13 @@ fn exe(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
+/// The first usable `name` on `PATH`. Empty files are skipped: on Windows `cargo test` puts
+/// `target\debug` on `PATH`, and the Tauri build leaves empty sidecar placeholders there
+/// (`ffmpeg.exe`), which Windows refuses to run.
 fn find_on_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?)
         .map(|dir| dir.join(exe(name)))
-        .find(|p| p.is_file())
+        .find(|p| usable(p))
 }
 
 fn usable(path: &Path) -> bool {

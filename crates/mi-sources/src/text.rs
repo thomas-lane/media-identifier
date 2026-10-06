@@ -362,7 +362,13 @@ fn decode_entities(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         let tail = &rest[i..];
-        let Some(end) = tail[..tail.len().min(12)].find(';') else {
+        // An entity is at most 12 bytes; the window ends at a character boundary so text such
+        // as "Q&A: “Who’s there?”" (multibyte quotes near the `&`) is never cut inside a character.
+        let mut window = tail.len().min(12);
+        while !tail.is_char_boundary(window) {
+            window -= 1;
+        }
+        let Some(end) = tail[..window].find(';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
@@ -405,6 +411,23 @@ fn decode_entities(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entities_next_to_multibyte_text_never_panic() {
+        assert_eq!(
+            decode_entities("Simon & Garfunkel’s song"),
+            "Simon & Garfunkel’s song"
+        );
+        assert_eq!(
+            decode_entities("Q&A: “Who’s there?”"),
+            "Q&A: “Who’s there?”"
+        );
+        assert_eq!(decode_entities("Caf&eacute;&amp;é"), "Caf&eacute;&é");
+        for s in ["&ééééééé;", "&éé;", "a&", "&#233;", "&;éééé"] {
+            let _ = decode_entities(s);
+        }
+        assert_eq!(decode_entities("&#233;"), "é");
+    }
 
     #[test]
     fn srt_cleanup_keeps_words_and_drops_markup() {

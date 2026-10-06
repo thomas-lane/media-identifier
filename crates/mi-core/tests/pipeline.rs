@@ -547,6 +547,7 @@ async fn without_reference_text_the_job_continues_with_titles_and_summaries() {
     let catalog = FakeCatalog {
         episodes: Ok(episodes()),
         texts: Err("SubDL is down".into()),
+        panics: false,
     };
     let h = harness(media, catalog, FakeSpeech::new(script));
     let job = h.engine.start_job(request(&folder)).unwrap();
@@ -578,6 +579,7 @@ async fn a_missing_episode_list_fails_the_job_with_a_reason() {
     let catalog = FakeCatalog {
         episodes: Err("connection refused".into()),
         texts: Ok(Vec::new()),
+        panics: false,
     };
     let h = harness(media, catalog, FakeSpeech::new(script));
     let job = h.engine.start_job(request(&folder)).unwrap();
@@ -597,6 +599,21 @@ async fn a_missing_episode_list_fails_the_job_with_a_reason() {
             ..
         }
     )));
+    assert!(!h.engine.is_job_running());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_panic_inside_a_job_fails_it_and_frees_the_engine() {
+    let (media, script, folder) = four_files([0, 1, 2, 3]);
+    let mut catalog = FakeCatalog::with_subtitles();
+    catalog.panics = true;
+    let h = harness(media, catalog, FakeSpeech::new(script));
+    let job = h.engine.start_job(request(&folder)).unwrap();
+    let end = h.recorder.wait_for_end(&job).await;
+    assert!(
+        matches!(&end, JobEvent::Failed { message, .. } if message.contains("internal error")),
+        "{end:?}"
+    );
     assert!(!h.engine.is_job_running());
 }
 

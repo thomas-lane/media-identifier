@@ -213,3 +213,54 @@ async fn the_real_transport_sends_the_user_agent_query_key_and_bearer_token() {
     assert!(raw.contains("authorization: bearer tok"), "{raw}");
     assert!(!raw.contains("api_key"), "{raw}");
 }
+
+#[tokio::test]
+async fn an_oversized_body_is_refused_without_retrying() {
+    let t = FixtureTransport::new();
+    t.on(URL, Response::new(200, vec![b'x'; 2048]));
+    let request = Request::get(ProviderId::Tvmaze, URL, &[])
+        .unwrap()
+        .with_max_body(1024);
+    let err = client(&t).send(&request).await.unwrap_err();
+    assert!(
+        matches!(&err, SourceError::BadResponse { message, .. } if message.contains("larger than")),
+        "{err:?}"
+    );
+    assert_eq!(t.count(URL), 1, "not retried");
+}
+
+#[tokio::test]
+async fn the_real_transport_stops_reading_a_body_at_the_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}/big", listener.local_addr().unwrap());
+    // A chunked body with no length announced: 64 chunks of 1 KiB, endless as far as the client
+    // knows until it has read them.
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+        );
+        for _ in 0..64 {
+            let chunk = vec![b'x'; 1024];
+            if stream.write_all(b"400\r\n").is_err()
+                || stream.write_all(&chunk).is_err()
+                || stream.write_all(b"\r\n").is_err()
+            {
+                return;
+            }
+        }
+        let _ = stream.write_all(b"0\r\n\r\n");
+    });
+    let http = HttpClient::with_transport(std::sync::Arc::new(ReqwestTransport::new().unwrap()));
+    let request = Request::get(ProviderId::Tvmaze, &base, &[])
+        .unwrap()
+        .with_max_body(8 * 1024);
+    let err = http.send(&request).await.unwrap_err();
+    assert!(
+        matches!(&err, SourceError::BadResponse { message, .. } if message.contains("larger than")),
+        "{err:?}"
+    );
+    let _ = server.join();
+}

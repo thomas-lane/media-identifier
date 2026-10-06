@@ -316,6 +316,8 @@ impl MediaBackend for FakeMedia {
 pub struct FakeCatalog {
     pub episodes: Result<Vec<Episode>, String>,
     pub texts: Result<Vec<ReferenceText>, String>,
+    /// Panics when asked for the episode list, as a bug in a provider would.
+    pub panics: bool,
 }
 
 impl FakeCatalog {
@@ -323,6 +325,7 @@ impl FakeCatalog {
         Self {
             episodes: Ok(episodes()),
             texts: Ok((0..TITLES.len()).map(subtitles).collect()),
+            panics: false,
         }
     }
 }
@@ -342,6 +345,7 @@ impl Catalog for FakeCatalog {
         _show: &ShowRef,
         _ordering: EpisodeOrdering,
     ) -> mi_sources::Result<Vec<Episode>> {
+        assert!(!self.panics, "a provider bug");
         self.episodes
             .clone()
             .map_err(|message| mi_sources::SourceError::Network {

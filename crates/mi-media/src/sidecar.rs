@@ -43,7 +43,8 @@ pub struct SidecarLookup {
     /// suffix removed.
     pub exe_dir: Option<PathBuf>,
     /// Also search `PATH` (a Homebrew ffmpeg, for example). Only development builds set this, so
-    /// a released app always runs the pinned LGPL build it ships.
+    /// a released app runs the pinned LGPL build it ships unless `MI_FFMPEG`/`MI_FFPROBE` name
+    /// another program explicitly.
     pub allow_path_fallback: bool,
 }
 

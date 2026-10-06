@@ -242,8 +242,21 @@ impl Engine {
         let running = Arc::clone(&self.running);
         let sink = Arc::clone(&self.sink);
         let id = job_id.clone();
+        let runtime = self.runtime.clone();
         self.runtime.spawn(async move {
-            let outcome = pipeline::run(ctx).await;
+            // The pipeline runs as its own task so that a panic inside it (a bug) ends the job
+            // as Failed instead of leaving it running forever: the engine would otherwise
+            // refuse every later job as Busy and an update would never install.
+            let outcome = match runtime.spawn(pipeline::run(ctx)).await {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    tracing::error!(error = %e, "the identification job stopped unexpectedly");
+                    pipeline::Outcome::Failed(
+                        "Identification stopped because of an internal error. Please try again."
+                            .to_owned(),
+                    )
+                }
+            };
             {
                 let mut r = record.lock().unwrap_or_else(|p| p.into_inner());
                 r.finished_at_ms = Some(now_ms());

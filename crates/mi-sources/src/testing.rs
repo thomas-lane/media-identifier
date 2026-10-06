@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use mi_types::ProviderId;
 
-use crate::http::{Request, Response, Transport};
+use crate::http::{Request, Response, Transport, TransportError};
 
 /// One request the fixture transport received.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +71,7 @@ impl FixtureTransport {
 
 #[async_trait]
 impl Transport for FixtureTransport {
-    async fn send(&self, request: &Request) -> Result<Response, String> {
+    async fn send(&self, request: &Request) -> Result<Response, TransportError> {
         let url = request.public_url().to_owned();
         self.log
             .lock()
@@ -90,6 +90,6 @@ impl Transport for FixtureTransport {
         } else {
             queue.front().cloned()
         };
-        response.ok_or_else(|| format!("no fixture for {url}"))
+        response.ok_or_else(|| format!("no fixture for {url}").into())
     }
 }

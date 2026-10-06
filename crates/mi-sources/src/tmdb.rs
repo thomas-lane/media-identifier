@@ -60,12 +60,20 @@ pub async fn validate_key(http: &HttpClient, key: &str) -> crate::Result<()> {
     http.send(&request).await.map(|_| ())
 }
 
-/// The TMDb episode-list provider.
-#[derive(Debug, Clone)]
+/// The TMDb episode-list provider. Its `Debug` output hides the key.
+#[derive(Clone)]
 pub struct Tmdb {
     http: HttpClient,
     cache: Arc<Cache>,
     key: String,
+}
+
+impl std::fmt::Debug for Tmdb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tmdb")
+            .field("key", &"<hidden>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Tmdb {
@@ -385,6 +393,13 @@ fn group_episodes(show: &ShowRef, details: GroupDetails) -> Vec<Episode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_output_hides_the_key() {
+        let cache = Arc::new(Cache::in_memory().unwrap());
+        let tmdb = Tmdb::new(HttpClient::new().unwrap(), cache, "tmdb-secret-123".into());
+        assert!(!format!("{tmdb:?}").contains("tmdb-secret-123"));
+    }
 
     #[test]
     fn v3_keys_go_in_the_query_and_tokens_in_a_header() {

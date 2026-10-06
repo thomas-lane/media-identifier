@@ -1,7 +1,5 @@
 # Online sources
 
-<!-- owner: sources module -->
-
 Media Identifier needs two things from outside the computer: the show's episode list, and text
 known to belong to each episode (subtitles, song lyrics or a summary), which it compares with
 what it hears in each file. All of this lives in `crates/mi-sources`; `mi_sources::Sources` is
@@ -21,7 +19,8 @@ the wording lives in one place.
 
 ## What is sent online
 
-Audio, video, transcripts and file paths never leave the computer. Requests carry only:
+Audio, video, transcripts and file paths never leave the computer. Requests to the sources carry
+only:
 
 | Source | Request contents |
 |---|---|
@@ -31,13 +30,35 @@ Audio, video, transcripts and file paths never leave the computer. Requests carr
 | SubDL download | the subtitle's download path from the search result, without a key |
 | LRCLIB | an episode title and the show name |
 
-Every request goes through `mi_sources::HttpClient` and sends
+Every request to a source goes through `mi_sources::HttpClient` and sends
 `User-Agent: MediaIdentifier/<version> (https://github.com/thomas-lane/media-identifier)`. TVmaze
 asks for a User-Agent that identifies the application, and LRCLIB requires the application's name,
 version and a link to its homepage.
 
+The app makes two other kinds of request, outside `HttpClient` because they are file downloads
+rather than provider calls:
+
+- **Speech models** (`mi_transcribe::ModelStore`): the pinned model files from Hugging Face, with
+  `User-Agent: MediaIdentifier/<version>`, resumable and verified by SHA-256 (see
+  [architecture](architecture.md#transcription)). They send nothing about the user's files.
+- **Update checks** (`tauri-plugin-updater`): the release feed `latest.json` and, after the user
+  agrees, the update itself (see [development](development.md#releases)). They send the app's
+  version and platform.
+
+**Response size.** A response body is read chunk by chunk, after gzip decoding, and abandoned once
+it passes a limit: 16 MiB by default (`mi_sources::http::MAX_BODY_BYTES`) and 32 MiB for SubDL
+archives (`mi_sources::subdl::MAX_DOWNLOAD_BYTES`). Real responses are far smaller; the limit keeps
+a broken or hostile server, or a compressed "bomb" that expands enormously, from exhausting
+memory, since bodies are held in memory and cached. A response over the limit fails with a plain
+message, is not retried and is not cached.
+
+**Redirects** are followed only to `https` addresses, at most five, so a redirect can never send a
+request that may carry a key over plain HTTP.
+
 API keys travel separately from the request URL (`mi_sources::http::Secret`): a key is added only
-when the request is sent, so it never appears in logs, in cache keys, or in `Debug` output.
+when the request is sent, so it never appears in logs or cache keys. Every type that holds a key
+(`Secret`, `ApiKeys`, the `Subdl` and `Tmdb` providers, the settings store) prints it as
+`<hidden>` in `Debug` output, and tests check that.
 Settings stores keys outside the settings file (see `AGENTS.md`, "Keys stay private").
 
 ## Rate limits and retries
@@ -197,16 +218,20 @@ For each season (in broadcast numbering, which SubDL uses):
    episode's own archive.
 
 Downloads come from `https://dl.subdl.com` without the key: SubDL counts anonymous downloads per IP
-address (300 a day), and authenticated downloads exist only on paid plans. A free key allows 2,000
+address (300 a day), and authenticated downloads exist only on paid plans. A download link from
+the search results must be a path on that host or a full `https://dl.subdl.com/...` address;
+anything else (another host, plain HTTP, or a path that would change the host, such as
+`@other.example/x`) is refused, so search results can never make the app contact another server. A free key allows 2,000
 searches a day. A season pack costs one download for a whole season, which is why packs come first.
 
 Episodes in DVD order are looked up under their aired numbers (matched through the episode ids of
 the aired list) and reported under their DVD numbers, so a subtitle for broadcast episode 11 is
 never attached to DVD episode 11.
 
-Archives are read with limits, so a damaged or hostile archive cannot exhaust memory: at most 500
-entries, 5 MiB per subtitle file and 100 MiB in all; only `.srt`, `.ass`, `.ssa` and `.vtt` files
-are read.
+Archives are read with limits, so a damaged or hostile archive cannot exhaust memory when it is
+unpacked: at most 500 entries, 5 MiB per subtitle file and 100 MiB in all; only `.srt`, `.ass`,
+`.ssa` and `.vtt` files are read. The archive itself is at most 32 MiB (see "Response size"
+above).
 
 SubDL also offers an API v2 (`/api/v2/...`, key in an `Authorization` header). The app uses v1
 because v1's documentation describes the season-pack listing (`unpack_files` with season and

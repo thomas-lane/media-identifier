@@ -48,6 +48,11 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+/// Largest response body accepted by default: 16 MiB, after decompression. Episode lists and
+/// search results are far smaller; the limit keeps a broken or hostile server (or a compressed
+/// "bomb") from exhausting memory, since bodies are held in memory and cached.
+pub const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
+
 /// One GET request.
 #[derive(Debug, Clone)]
 pub struct Request {
@@ -55,6 +60,7 @@ pub struct Request {
     pub provider: ProviderId,
     url: Url,
     secret: Option<Secret>,
+    max_body_bytes: u64,
 }
 
 impl Request {
@@ -73,7 +79,19 @@ impl Request {
             provider,
             url,
             secret: None,
+            max_body_bytes: MAX_BODY_BYTES,
         })
+    }
+
+    /// Sets the largest body accepted, after decompression (default [`MAX_BODY_BYTES`]).
+    pub fn with_max_body(mut self, bytes: u64) -> Self {
+        self.max_body_bytes = bytes;
+        self
+    }
+
+    /// The largest body accepted, after decompression.
+    pub fn max_body_bytes(&self) -> u64 {
+        self.max_body_bytes
     }
 
     /// Attaches a secret.
@@ -148,15 +166,35 @@ impl Response {
     }
 }
 
+/// Why a transport returned no usable response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransportError {
+    /// No response arrived (connection, TLS or timeout failure), in plain words. Retried.
+    Failed(String),
+    /// The body was larger than [`Request::max_body_bytes`]; reading stopped there. Not retried.
+    TooLarge {
+        /// The limit, bytes.
+        limit: u64,
+    },
+}
+
+impl From<String> for TransportError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+
 /// Moves bytes. Implementations do no retries, caching or rate limiting; [`HttpClient`] does.
 #[async_trait]
 pub trait Transport: Send + Sync + std::fmt::Debug {
-    /// Sends `request` and returns the response, whatever its status. `Err` means no response
-    /// arrived (connection, TLS or timeout failure), described in plain words.
-    async fn send(&self, request: &Request) -> Result<Response, String>;
+    /// Sends `request` and returns the response, whatever its status, with at most
+    /// [`Request::max_body_bytes`] of body.
+    async fn send(&self, request: &Request) -> Result<Response, TransportError>;
 }
 
-/// The real transport, built on `reqwest` with [`USER_AGENT`] and a 30 s timeout.
+/// The real transport, built on `reqwest` with [`USER_AGENT`] and a 30 s timeout. Redirects are
+/// followed only to `https` URLs (at most five), so a redirect can never downgrade a request,
+/// which may carry a key, to plain HTTP.
 #[derive(Debug, Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
@@ -165,9 +203,19 @@ pub struct ReqwestTransport {
 impl ReqwestTransport {
     /// Builds the transport.
     pub fn new() -> crate::Result<Self> {
+        let redirects = reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.url().scheme() != "https" {
+                attempt.error("refused a redirect to a non-HTTPS address")
+            } else if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else {
+                attempt.follow()
+            }
+        });
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .timeout(Duration::from_secs(30))
+            .redirect(redirects)
             .build()
             .map_err(|e| crate::SourceError::Client(e.to_string()))?;
         Ok(Self { client })
@@ -176,7 +224,7 @@ impl ReqwestTransport {
 
 #[async_trait]
 impl Transport for ReqwestTransport {
-    async fn send(&self, request: &Request) -> Result<Response, String> {
+    async fn send(&self, request: &Request) -> Result<Response, TransportError> {
         let mut builder = self.client.get(request.url_with_secret());
         if let Some(token) = request.bearer() {
             builder = builder.bearer_auth(token);
@@ -198,16 +246,39 @@ impl Transport for ReqwestTransport {
                     .map(|v| (name.as_str().to_ascii_lowercase(), v.to_owned()))
             })
             .collect();
-        let body = response
-            .bytes()
+        // The body is read chunk by chunk (after gzip decoding) and abandoned at the limit, so a
+        // huge or endlessly decompressing body is never held in memory.
+        let limit = request.max_body_bytes();
+        let mut response = response;
+        if response.content_length().is_some_and(|n| n > limit) {
+            return Err(TransportError::TooLarge { limit });
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
             .map_err(|e| describe_reqwest_error(&e))?
-            .to_vec();
+        {
+            if body.len() as u64 + chunk.len() as u64 > limit {
+                return Err(TransportError::TooLarge { limit });
+            }
+            body.extend_from_slice(&chunk);
+        }
         Ok(Response {
             status,
             headers,
             body,
         })
+    }
+}
+
+fn too_large(provider: ProviderId, limit: u64) -> crate::SourceError {
+    crate::SourceError::BadResponse {
+        provider,
+        message: format!(
+            "the response was larger than {} MB",
+            limit.div_ceil(1024 * 1024)
+        ),
     }
 }
 
@@ -373,8 +444,12 @@ impl HttpClient {
             self.wait_for_slot(provider).await?;
             tracing::debug!(?provider, url = request.public_url(), attempt, "request");
             let response = match self.transport.send(request).await {
+                Ok(r) if r.body.len() as u64 > request.max_body_bytes() => {
+                    return Err(too_large(provider, request.max_body_bytes()));
+                }
                 Ok(r) => r,
-                Err(message) => {
+                Err(TransportError::TooLarge { limit }) => return Err(too_large(provider, limit)),
+                Err(TransportError::Failed(message)) => {
                     last_error = message;
                     if attempt < self.policy.max_attempts {
                         tokio::time::sleep(backoff).await;

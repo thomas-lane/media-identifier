@@ -34,6 +34,35 @@ pub const SEARCH_URL: &str = "https://api.subdl.com/api/v1/subtitles";
 pub const ACCOUNT_URL: &str = "https://api.subdl.com/api/v1/me";
 /// Download host; subtitle `url` paths from search results are appended to it.
 pub const DOWNLOAD_BASE: &str = "https://dl.subdl.com";
+/// Largest subtitle archive downloaded: 32 MiB. Season packs are a few megabytes.
+pub const MAX_DOWNLOAD_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The address of a download named in SubDL's search results: a path on [`DOWNLOAD_BASE`], or a
+/// full `https://dl.subdl.com/...` URL. Anything else (another host, plain HTTP, or a path that
+/// would change the host, such as `@other.example/x` or `.other.example/x`) is refused, so the
+/// search results can never make the app contact another server.
+fn download_url(path: &str) -> crate::Result<String> {
+    let refused = || SourceError::BadResponse {
+        provider: ProviderId::Subdl,
+        message: "a download link points outside dl.subdl.com".to_owned(),
+    };
+    let base = reqwest::Url::parse(DOWNLOAD_BASE).map_err(|_| refused())?;
+    let url = if path.starts_with('/') && !path.starts_with("//") {
+        base.join(path).map_err(|_| refused())?
+    } else {
+        reqwest::Url::parse(path).map_err(|_| refused())?
+    };
+    let same_origin = url.scheme() == "https"
+        && url.host_str() == base.host_str()
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none();
+    if same_origin {
+        Ok(url.into())
+    } else {
+        Err(refused())
+    }
+}
 
 /// Search results are reused for 30 days.
 pub const SEARCH_FRESHNESS: Freshness = Freshness::days(30);
@@ -75,12 +104,20 @@ pub async fn validate_key(http: &HttpClient, key: &str) -> crate::Result<()> {
     Ok(())
 }
 
-/// The SubDL reference-text provider.
-#[derive(Debug, Clone)]
+/// The SubDL reference-text provider. Its `Debug` output hides the key.
+#[derive(Clone)]
 pub struct Subdl {
     http: HttpClient,
     cache: Arc<Cache>,
     key: String,
+}
+
+impl std::fmt::Debug for Subdl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Subdl")
+            .field("key", &"<hidden>")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Subdl {
@@ -233,12 +270,8 @@ impl Subdl {
 
     /// Downloads `path` from [`DOWNLOAD_BASE`] (cached forever: subtitle files do not change).
     async fn download(&self, path: &str) -> crate::Result<Vec<u8>> {
-        let url = if path.starts_with("http") {
-            path.to_owned()
-        } else {
-            format!("{DOWNLOAD_BASE}{path}")
-        };
-        let request = Request::get(ProviderId::Subdl, &url, &[])?;
+        let url = download_url(path)?;
+        let request = Request::get(ProviderId::Subdl, &url, &[])?.with_max_body(MAX_DOWNLOAD_BYTES);
         fetch::bytes(&self.http, &self.cache, &request, Freshness::FOREVER).await
     }
 }

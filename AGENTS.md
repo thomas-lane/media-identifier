@@ -91,9 +91,14 @@ reported as real-world accuracy.
 
 ## Invariants (keep tests for each)
 
-- **Audio and video stay local**: only show names, provider ids and episode numbers are sent
-  online. Every request goes through `mi_sources::HttpClient`, which sends
-  `User-Agent: MediaIdentifier/<version>`, honours rate-limit headers and backs off on HTTP 429.
+- **Audio and video stay local**: audio, video, transcripts and file paths are never sent online.
+  The complete list of what each source receives (show names and ids, episode titles and
+  numbers, the language, the user's keys) is in `docs/sources.md`, "What is sent online". Every
+  provider request goes through `mi_sources::HttpClient`, which sends
+  `User-Agent: MediaIdentifier/<version> (<project URL>)`, honours rate-limit headers, backs off
+  on HTTP 429 and caps response sizes. The only other requests are model downloads
+  (`mi_transcribe::ModelStore`, pinned Hugging Face URLs) and update checks
+  (`tauri-plugin-updater`).
 - **Nothing downloads twice**: provider responses and normalised reference text are cached in
   SQLite (`mi_sources::Cache`); TMDb data is served from the cache for at most six months.
 - **Models are verified**: a model file exists under its final name only after its size and
@@ -110,11 +115,13 @@ reported as real-world accuracy.
 - **One job at a time**: `Engine::start_job` returns `Busy` while a job runs, so the speech model
   and the disc are never shared between two jobs.
 - **Keys stay private**: API keys are stored in `api-keys.json` (mode 0600 on macOS), separate
-  from settings, and never returned to the UI or logged.
+  from settings, never returned to the UI or logged, and hidden in `Debug` output.
 - **Updates never interrupt work**: `install_update_and_relaunch` returns `Busy` while a job runs
   and installs only after it ends; background update checks fail quietly (log only).
-- **Released apps run only bundled sidecars**: `PATH` lookup is enabled only in debug builds, and
-  `MI_REQUIRE_SIDECARS=1` (release builds) fails the build on a missing or empty sidecar.
+- **Released apps never take ffmpeg from `PATH`**: they run the bundled sidecars, or a program
+  named explicitly in `MI_FFMPEG`/`MI_FFPROBE` (for testing another build). `PATH` lookup is
+  enabled only in debug builds, and `MI_REQUIRE_SIDECARS=1` (release builds) fails the build on a
+  missing or empty sidecar.
 
 ## Conventions
 

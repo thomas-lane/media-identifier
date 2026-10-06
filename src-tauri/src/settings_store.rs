@@ -13,10 +13,21 @@ pub const SETTINGS_FILE: &str = "settings.json";
 /// File name of the API keys, in the app config folder.
 pub const KEYS_FILE: &str = "api-keys.json";
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 struct StoredKeys {
     subdl: Option<String>,
     tmdb: Option<String>,
+}
+
+/// Shows only which keys are set, so a `Debug` print of the store never contains a key.
+impl std::fmt::Debug for StoredKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let shown = |k: &Option<String>| if k.is_some() { "<hidden>" } else { "<none>" };
+        f.debug_struct("StoredKeys")
+            .field("subdl", &shown(&self.subdl))
+            .field("tmdb", &shown(&self.tmdb))
+            .finish()
+    }
 }
 
 /// Settings (`settings.json`) and API keys (`api-keys.json`) in the app config folder.
@@ -168,6 +179,8 @@ mod tests {
             .unwrap();
         let settings_text = std::fs::read_to_string(dir.path().join(SETTINGS_FILE)).unwrap();
         assert!(!settings_text.contains("secret-key"));
+        // Nor into a Debug print of the store.
+        assert!(!format!("{store:?}").contains("secret-key"));
     }
 
     #[test]

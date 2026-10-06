@@ -1,7 +1,15 @@
 # Windows builds link the C and C++ runtimes statically (/MT). The per-user NSIS installer ships
 # no Visual C++ redistributable, and whisper.cpp is C++: linked dynamically, the app would need
-# MSVCP140.dll and VCRUNTIME140.dll and would not start on a PC without them. The cmake crate
-# reads this flag and builds whisper.cpp and ggml with /MT too. The release workflow checks the
-# built executable with `dumpbin /dependents`.
+# MSVCP140.dll and VCRUNTIME140.dll and would not start on a PC without them. The release
+# workflow checks the built executable with `dumpbin /dependents`.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# whisper.cpp and ggml must be compiled with the same static runtime as the Rust code, or the
+# link fails with unresolved `__imp_*` C library symbols. Their CMake build selects the runtime
+# with CMAKE_MSVC_RUNTIME_LIBRARY (policy CMP0091) and ignores the /MT flag the cmake crate
+# passes; whisper-rs-sys forwards every CMAKE_* environment variable to CMake as a definition.
+# Both settings are ignored by compilers other than MSVC, so they are harmless on macOS.
+[env]
+CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"

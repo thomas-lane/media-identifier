@@ -131,10 +131,14 @@ such calls.
 
 **Windows.** The build needs the Visual Studio C++ build tools and CMake (both installed on
 GitHub's `windows-latest` image). The speech model runs on the CPU. The C and C++ runtimes are
-linked statically (`-C target-feature=+crt-static` in `.cargo/config.toml`, which the `cmake`
-crate passes on to whisper.cpp as `/MT`): the per-user installer ships no Visual C++
+linked statically: the per-user installer ships no Visual C++
 redistributable, and an app that needed `MSVCP140.dll` or `VCRUNTIME140.dll` would not start on a
-PC without it. The release workflow checks the built executable with `dumpbin /dependents`.
+PC without it. `.cargo/config.toml` sets this for both halves of the program: `-C
+target-feature=+crt-static` for the Rust code, and `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`
+for whisper.cpp and ggml. whisper.cpp's CMake build chooses its runtime from that variable and
+ignores the `/MT` flag the `cmake` crate passes; when the two halves use different runtimes,
+linking fails with unresolved `__imp_*` C library symbols. The release workflow checks the built
+executable with `dumpbin /dependents`.
 
 **Vulkan (Windows, optional).** The app's `vulkan` feature (forwarded to `mi-transcribe`) adds a
 Vulkan GPU backend, used when a Vulkan device is present:

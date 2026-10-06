@@ -39,7 +39,10 @@ const STATED = {
 };
 
 function run(cmd, args, cwd = ROOT) {
-  return execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  // On Windows npm is a batch file (npm.cmd), which Node starts only through a shell. The
+  // arguments passed here are fixed words without spaces or quotes, so the shell sees them as is.
+  const shell = process.platform === "win32" && cmd === "npm";
+  return execFileSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, shell });
 }
 
 function licenseFiles(dir) {

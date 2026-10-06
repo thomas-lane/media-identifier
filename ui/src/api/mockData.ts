@@ -351,9 +351,9 @@ export function recentJobs(now: number = Date.now()): RecentJob[] {
       finishedAtMs: now - DAY,
     },
     {
-      jobId: "job-mwc",
-      folder: "/Volumes/Rips/MARRIED_WITH_CHILDREN_S03",
-      showName: "Married... with Children",
+      jobId: "job-clockwork",
+      folder: "/Volumes/Rips/CLOCKWORK_GARDEN_S01",
+      showName: "The Clockwork Garden",
       fileCount: 22,
       toReview: 2,
       saved: false,

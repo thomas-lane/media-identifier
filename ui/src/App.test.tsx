@@ -23,7 +23,7 @@ async function toReview() {
 describe("App shell", () => {
   it("lists recent jobs and switches sections from the navigation", async () => {
     renderApp();
-    expect(await screen.findByRole("button", { name: "Married... with Children" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "The Clockwork Garden" })).toBeInTheDocument();
     expect(screen.getByText("2 to review")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();

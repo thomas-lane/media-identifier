@@ -43,6 +43,7 @@
     "resources": {
       "../LICENSE": "licenses/LICENSE.txt",
       "../THIRD_PARTY.md": "licenses/THIRD_PARTY.md",
+      "../third_party/NOTICES.md": "licenses/NOTICES.md",
       "../third_party/ffmpeg/NOTICE.md": "licenses/ffmpeg/NOTICE.md",
       "../third_party/ffmpeg/COPYING.LGPLv2.1": "licenses/ffmpeg/COPYING.LGPLv2.1"
     },

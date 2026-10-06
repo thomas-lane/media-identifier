@@ -1,6 +1,8 @@
 # Builds the macOS and Windows installers when a version tag (v*) is pushed, signs the update
 # files, and attaches everything, latest.json and the FFmpeg source to a draft GitHub release.
-# Owner: release module. Procedure: docs/development.md, "Releases".
+# Procedure: docs/development.md, "Releases". Every action is pinned to a commit SHA (the tag is
+# in the comment): the build job hands the updater signing key to tauri-action, and a moved tag
+# must not be able to change the code that receives it.
 name: Release
 
 on:
@@ -28,7 +30,7 @@ jobs:
       release-id: ${{ steps.release.outputs.id }}
       notes: ${{ steps.notes.outputs.notes }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: The tag matches the app version in Cargo.toml
         run: |
@@ -87,7 +89,7 @@ jobs:
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
       - name: Restore the FFmpeg source
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: third_party/ffmpeg/src/ffmpeg-*.tar.xz
           key: ffmpeg-source-${{ hashFiles('scripts/build-ffmpeg.sh') }}
@@ -127,13 +129,15 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # The ffmpeg and ffprobe sidecars are rebuilt only when the build script (which pins the
-      # source version, checksum and configure options) changes.
+      # Caches are keyed by the build script (which pins the FFmpeg source version, checksum and
+      # configure options). GitHub saves them under the tag that built them, and a run can
+      # restore only caches of its own ref or the default branch, so they speed up re-runs of
+      # the same tag's workflow; each new tag builds the sidecars and the app from scratch.
       - name: Restore ffmpeg sidecars
         id: ffmpeg-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             src-tauri/binaries/ffmpeg-${{ matrix.target }}*
@@ -142,7 +146,7 @@ jobs:
 
       - name: Restore the FFmpeg source
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: third_party/ffmpeg/src/ffmpeg-*.tar.xz
           key: ffmpeg-source-${{ hashFiles('scripts/build-ffmpeg.sh') }}
@@ -150,7 +154,7 @@ jobs:
 
       - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: MINGW64
           update: false
@@ -182,15 +186,16 @@ jobs:
         shell: msys2 {0}
         run: scripts/build-ffmpeg.sh --verify --target ${{ matrix.target }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.target }}
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -200,12 +205,15 @@ jobs:
         run: npm ci
         working-directory: ui
 
+      - name: Third-party notices are current
+        run: node scripts/third-party-notices.mjs --check
+
       # Builds the app (MI_REQUIRE_SIDECARS=1 makes a missing or empty sidecar a build error),
       # bundles it (.dmg and .app.tar.gz on macOS, the per-user NSIS installer on Windows),
       # signs the update files with the private key, uploads them to the draft release and
       # merges this platform into the release's latest.json, whose notes are releaseBody.
       - name: Build, sign and upload
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -223,3 +231,20 @@ jobs:
           releaseDraft: true
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
+
+      # The C and C++ runtimes are linked statically (.cargo/config.toml), because the per-user
+      # installer ships no Visual C++ redistributable: an app that needs MSVCP140.dll or
+      # VCRUNTIME140.dll would not start on a PC without it. The release is still a draft here,
+      # so a failure keeps it from being published.
+      - name: The Windows app needs no Visual C++ runtime DLLs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          $deps = & $dumpbin.FullName /dependents "target\${{ matrix.target }}\release\media-identifier.exe"
+          $deps
+          if ($deps -match '(?i)(msvcp|vcruntime)\d+(_\d+)?\.dll') {
+            Write-Error "The app links the Visual C++ runtime DLLs dynamically"
+            exit 1
+          }

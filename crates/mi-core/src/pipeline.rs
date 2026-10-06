@@ -142,6 +142,11 @@ pub fn failure_message(e: &CoreError) -> String {
             "The speech model is not downloaded yet. Download it on the Start screen, then try again."
                 .to_owned()
         }
+        CoreError::Transcribe(mi_transcribe::TranscribeError::UnsupportedProcessor(missing)) => {
+            format!(
+                "This computer's processor lacks {missing}, which speech recognition needs. Media Identifier needs an Intel or AMD processor with AVX2 (most from 2013 on; many Pentium, Celeron and Atom processors lack it)."
+            )
+        }
         CoreError::Media(mi_media::MediaError::SidecarMissing { tool, .. }) => format!(
             "Media Identifier could not find its {tool} program. Reinstalling the app should fix this."
         ),
@@ -905,6 +910,18 @@ mod tests {
             language: "en".into(),
             fetched_at_ms: 0,
         }
+    }
+
+    #[test]
+    fn a_processor_without_avx2_gets_a_plain_reason() {
+        let e = CoreError::Transcribe(mi_transcribe::TranscribeError::UnsupportedProcessor(
+            "AVX, AVX2".into(),
+        ));
+        let message = failure_message(&e);
+        assert!(
+            message.starts_with("This computer's processor lacks AVX, AVX2"),
+            "{message}"
+        );
     }
 
     #[test]

@@ -76,8 +76,10 @@ belongs to, so tests can script a transcript per file; every `Transcriber` is a 
 
 Each job's results live in a `JobRecord` (`crates/mi-core/src/jobs.rs`): the `JobResults` the UI
 shows, the scanned files and what was heard in each file. The record is filled as the job runs,
-so `job_results` returns partial results during a job, and written to
-`<app data>/jobs/<job id>.json` when the job ends, so Recent and Review work after a relaunch.
+so `job_results` returns partial results during a job. It is written to
+`<app data>/jobs/<job id>.json` when the job finishes, or when it fails or is cancelled with at
+least one file result, so Recent and Review work after a relaunch; a job that stopped before any
+file was matched has nothing to review and is not kept.
 Rename plans are built from the record, not from the window: `apply_rename` builds the plan
 again from the request it carries and refuses it when the result differs (see
 [saving](saving.md#applying)). `crates/mi-core/examples/identify.rs` runs the same engine from
@@ -94,9 +96,11 @@ threads that cannot await an async token.
 
 Progress reaches the UI as `JobEvent`s: `mi_core::EventSink` is implemented by
 `src-tauri/src/sink.rs`, which emits Tauri events. The last event of a job is always `Finished`,
-`Failed` or `Cancelled`. The engine sends it only after the job's record is saved and the job no
-longer counts as running, so a window that reacts to it can read the results and start another
-job at once.
+`Failed` or `Cancelled`. The engine sends it only after the job's record is saved (when it is
+kept, as above) and the job no longer counts as running, so a window that reacts to it can read
+the results and start another job at once. The pipeline runs as its own Tokio task inside the
+job's task, so even a panic (a bug) ends the job with `Failed` and frees the engine instead of
+leaving it busy.
 
 ## Commands and events
 
@@ -225,16 +229,17 @@ are absent so that the workspace compiles on a fresh clone. Release builds set
 `MI_REQUIRE_SIDECARS=1`, which makes `build.rs` fail on a missing or empty binary.
 
 The sidecars are a minimal LGPL build made by `scripts/build-ffmpeg.sh` (see
-[development](development.md#ffmpeg-sidecars)). It enables these FFmpeg components, named as
-FFmpeg's `configure` names them; `configure` adds the few video filters the ffmpeg program
-cannot be built without (`crop`, `format`, `hflip`, `null`, `rotate`, `transpose`, `trim`,
-`vflip`):
+[development](development.md#ffmpeg-sidecars)). It enables these FFmpeg components, named exactly
+as in the script's lists and FFmpeg's `configure` (the built `ffmpeg -decoders` and `-muxers`
+list three of them differently: `movtext` as `mov_text`, `pcm_f32le` and `pcm_s16le` as `f32le`
+and `s16le`). `configure` also adds the few video filters the ffmpeg program cannot be built
+without (`crop`, `hflip`, `rotate`, `transpose`, `trim`, `vflip`):
 
 | Purpose | Components |
 |---|---|
 | Containers | demuxers `matroska`, `mov` (mp4/m4v/mov), `avi`, `mpegps` (VOB), `mpegts`, and `mpegvideo` (raw MPEG video, which the VOB demuxer uses to recognise DVD video streams) |
-| Audio | decoders `ac3`, `eac3`, `aac`, `aac_latm`, `mp1`, `mp2`, `mp3` (and their float variants), `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, `alac`, common `pcm_*` (including DVD and Blu-ray PCM); filters `aresample`, `aformat`, `anull`, `atrim`; encoders `pcm_f32le`, `pcm_s16le`; muxers `f32le`, `s16le`, `wav`, `null` |
-| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `text`; encoders `subrip`/`srt`; muxer `srt` |
+| Audio | decoders `ac3`, `eac3`, `aac`, `aac_latm`, `mp1`, `mp2`, `mp3` (and their float variants), `dca` (DTS), `truehd`, `mlp`, `flac`, `opus`, `vorbis`, `alac`, common `pcm_*` (including DVD and Blu-ray PCM); filters `aresample`, `aformat`, `anull`, `atrim`, and the video filters `format` and `null`, which the ffmpeg program requires; encoders `pcm_f32le`, `pcm_s16le`; muxers `pcm_f32le`, `pcm_s16le`, `wav`, `null` |
+| Embedded subtitles | decoders `subrip`, `ass`, `ssa`, `webvtt`, `movtext`, `text`; encoders `subrip`/`srt`; muxer `srt` |
 | Timestamps and stream details | parsers `aac`, `aac_latm`, `ac3`, `dca`, `flac`, `mlp`, `mpegaudio`, `opus`, `vorbis`, `h264`, `hevc`, `mpegvideo`, `vc1` |
 | I/O | protocols `file`, `pipe` |
 | Probing | ffprobe with JSON output |
@@ -276,9 +281,13 @@ more ranges and repeats. `Transcriber` is a trait so that pipeline tests can scr
 without a model.
 
 **Processors.** On macOS whisper.cpp runs on the GPU through Metal (`Accelerator::AppleGpu`), with
-its shaders embedded in the binary. On Windows it runs on the CPU; the crate feature `vulkan` adds
-a Vulkan GPU backend, used when a Vulkan device is present. If the GPU context cannot be created
-the model is loaded on the CPU instead. Flash attention is on in both cases.
+its shaders embedded in the binary. On Windows it runs on the CPU; an app built with its `vulkan`
+feature (off in releases, see [development](development.md#speech-recognition-whispercpp)) uses a
+Vulkan GPU when one is present. If the GPU context cannot be created the model is loaded on the
+CPU instead. Flash attention is on in both cases. On x86-64, `WhisperTranscriber::load` first
+checks that the processor has the instructions the release build uses (AVX, AVX2, FMA, F16C,
+BMI2) and fails with a plain message otherwise, because running without them would end the app
+with an illegal-instruction fault.
 
 **Cancellation.** whisper.cpp polls an abort callback between encoder and decoder passes, so a
 cancelled `transcribe` returns `Cancelled` within one pass, and the transcriber stays usable.
@@ -318,37 +327,10 @@ guess per model and processor and moves to the speed measured on the computer as
 | Last update offered (version and time, for "Remind me later") | `<app config>/update-offer.json` | `src-tauri` (`updater.rs`) |
 | Saved jobs (one JSON file per job: results, scanned files, what was heard) | `<app data>/jobs/` | `mi-core` (`jobs.rs`) |
 
-`<app config>` and `<app data>` are Tauri's per-app folders for the identifier
-`com.thomaslane.mediaidentifier` (`~/Library/Application Support/com.thomaslane.mediaidentifier`
-on macOS, `%APPDATA%\com.thomaslane.mediaidentifier` on Windows). `mi_core::DataPaths` lays them
-out.
-
-## File ownership
-
-Modules are developed in parallel. Each file has one owner; only the owner edits it. A module
-that needs a change in a file it does not own reports the change to the integrator instead.
-
-| Module | Owns |
-|---|---|
-| media | `crates/mi-media/**`; `crates/mi-types/src/media.rs`; the "Scanning and play-all detection" section of `docs/identification.md` |
-| transcribe | `crates/mi-transcribe/**`; `crates/mi-types/src/transcript.rs`, `crates/mi-types/src/models.rs`; the "Listening" section of `docs/identification.md` |
-| sources | `crates/mi-sources/**`; `crates/mi-types/src/catalog.rs`, `crates/mi-types/src/reference.rs`; `docs/sources.md` |
-| match | `crates/mi-match/**`; `crates/mi-types/src/matching.rs`; the "Matching" sections of `docs/identification.md` |
-| ui | `ui/**` except `ui/src/types/generated/` (generated) and `ui/src/api/tauri.ts` (integrator) |
-| release | `crates/mi-rename/**`; `crates/mi-types/src/rename.rs`, `crates/mi-types/src/update.rs`; `src-tauri/src/updater.rs`; the `bundle` and `plugins.updater` sections of `src-tauri/tauri.conf.json`; `.github/workflows/**`; `scripts/build-ffmpeg.sh`; `third_party/ffmpeg/**`; `docs/install.md`; the "Releases", "Updater signing key" and "ffmpeg sidecars" sections of `docs/development.md` |
-| branding | `assets/brand/**`; `src-tauri/icons/**`; `docs/images/**` |
-| integrator | `crates/mi-core/**`; `crates/mi-types/src/{lib,cancel,error,events,job,settings}.rs` and `crates/mi-types/tests/**`; `src-tauri/src/{lib,main,commands,state,sink,settings_store}.rs`, `src-tauri/build.rs`, `src-tauri/Cargo.toml`, `src-tauri/capabilities/**`, the rest of `src-tauri/tauri.conf.json`; `ui/src/api/tauri.ts`; root `Cargo.toml`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `THIRD_PARTY.md`; `docs/architecture.md`, `docs/glossary.md`, the remaining sections of `docs/development.md`; final consistency of all documents |
-
-Rules for shared files:
-
-- **Types**: a module changes only its own `crates/mi-types/src/` files, keeps changes additive
-  where possible, runs `MI_UPDATE_BINDINGS=1 cargo test -p mi-types --test bindings`, and lists
-  every type change in its report. The integrator resolves `ui/src/types/generated/index.ts` at
-  merge by regenerating.
-- **Dependencies**: a module adds third-party dependencies to its own crate's `Cargo.toml` with an
-  explicit version, and adds a row to its section of `THIRD_PARTY.md`. The integrator may move
-  shared versions into the root `[workspace.dependencies]`.
-- **Glossary**: a module adds its terms under its own heading in `docs/glossary.md`; the
-  integrator merges headings.
-- **Public API**: a crate's public functions and types are the contract other modules build
-  against. Changing a signature requires reporting it; adding is free.
+`<app config>` and `<app data>` are Tauri's per-app config folder and local data folder for the
+identifier `com.thomaslane.mediaidentifier`. On macOS both are
+`~/Library/Application Support/com.thomaslane.mediaidentifier`. On Windows `<app config>` is
+`%APPDATA%\com.thomaslane.mediaidentifier` (roaming, so the small settings follow the user) and
+`<app data>` is `%LOCALAPPDATA%\com.thomaslane.mediaidentifier`, because the speech models
+(about 0.75 GB), cache and History would otherwise be copied to and from a server at every
+sign-in on a roaming profile. `mi_core::DataPaths` lays out `<app data>`.

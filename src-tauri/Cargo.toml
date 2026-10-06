@@ -36,6 +36,11 @@ tauri-plugin-updater = "2.13.1"
 tauri-plugin-dialog = "2.8.1"
 tauri-plugin-opener = "2.7.0"
 
+[features]
+# Vulkan GPU speech recognition on Windows. Off in releases: such a build links vulkan-1.dll and
+# does not start on a PC without a Vulkan driver (docs/development.md, "Speech recognition").
+vulkan = ["mi-core/vulkan"]
+
 [dev-dependencies]
 tempfile.workspace = true
 

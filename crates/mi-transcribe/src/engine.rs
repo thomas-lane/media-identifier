@@ -85,6 +85,42 @@ impl DecodeOptions {
     }
 }
 
+/// Instructions whisper.cpp's CPU code uses on x86-64 that this processor lacks; empty when it has
+/// them all, and always empty on other architectures.
+///
+/// Release builds compile ggml with `GGML_NATIVE=OFF`, which on x86-64 targets AVX, AVX2, FMA,
+/// F16C and BMI2 (docs/development.md, "Speech recognition"). On a processor without them, the
+/// first model load or transcription would stop the whole app with an illegal-instruction fault
+/// and no message, so [`WhisperTranscriber::load`] checks first and fails with
+/// [`TranscribeError::UnsupportedProcessor`] instead. Many Pentium, Celeron and Atom processors,
+/// even recent ones, lack AVX.
+pub fn missing_processor_features() -> Vec<&'static str> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut missing = Vec::new();
+        if !std::arch::is_x86_feature_detected!("avx") {
+            missing.push("AVX");
+        }
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            missing.push("AVX2");
+        }
+        if !std::arch::is_x86_feature_detected!("fma") {
+            missing.push("FMA");
+        }
+        if !std::arch::is_x86_feature_detected!("f16c") {
+            missing.push("F16C");
+        }
+        if !std::arch::is_x86_feature_detected!("bmi2") {
+            missing.push("BMI2");
+        }
+        missing
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Vec::new()
+    }
+}
+
 /// Something that turns 16 kHz mono PCM into timed segments.
 ///
 /// A trait so `mi-core` and tests can use a scripted transcriber without a model file.
@@ -166,6 +202,10 @@ impl WhisperTranscriber {
     /// whisper.cpp's own log output is routed to `tracing` (target `whisper_rs`) instead of
     /// standard error.
     pub fn load(model_path: &Path, use_gpu: bool) -> crate::Result<Self> {
+        let missing = missing_processor_features();
+        if !missing.is_empty() {
+            return Err(TranscribeError::UnsupportedProcessor(missing.join(", ")));
+        }
         whisper_rs::install_logging_hooks();
         if !model_path.is_file() {
             return Err(TranscribeError::ModelMissing(
@@ -391,6 +431,15 @@ pub fn whisper_cpp_version() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_processor_check_matches_the_build_baseline() {
+        // The computers that build and test this crate have every feature the release needs
+        // (Apple Silicon, or x86-64 with AVX2), so nothing is missing and loading goes ahead.
+        assert!(missing_processor_features().is_empty());
+        let message = TranscribeError::UnsupportedProcessor("AVX2, FMA".into()).to_string();
+        assert!(message.contains("lacks AVX2, FMA"), "{message}");
+    }
 
     #[test]
     fn whisper_cpp_is_linked() {

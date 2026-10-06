@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-/// Files under the app's data folder (Tauri's `app_data_dir`, for example
+/// Files under the app's data folder (Tauri's `app_local_data_dir`, for example
 /// `~/Library/Application Support/com.thomaslane.mediaidentifier` on macOS and
-/// `%APPDATA%\com.thomaslane.mediaidentifier` on Windows).
+/// `%LOCALAPPDATA%\com.thomaslane.mediaidentifier` on Windows).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataPaths {
     /// The data folder.

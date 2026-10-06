@@ -9,8 +9,6 @@
 //! - [`add_window`]: collecting the segments of each window into one [`Transcript`].
 //!
 //! Audio never leaves the computer; only model files are downloaded.
-//!
-//! Owner: transcribe module (see `docs/architecture.md`).
 
 pub mod catalog;
 pub mod engine;
@@ -24,7 +22,8 @@ use mi_types::{SampleWindow, Segment, Transcript};
 
 pub use catalog::{MODEL_REVISION, PinnedFile, VAD_REVISION, model_info, vad_model_file};
 pub use engine::{
-    DecodeOptions, SAMPLE_RATE, Transcriber, WhisperTranscriber, whisper_cpp_version,
+    DecodeOptions, SAMPLE_RATE, Transcriber, WhisperTranscriber, missing_processor_features,
+    whisper_cpp_version,
 };
 pub use eta::{SpeedEstimator, audio_cost_seconds};
 pub use filter::{HallucinationFilter, compression_ratio};
@@ -53,6 +52,10 @@ pub enum TranscribeError {
     /// whisper.cpp failed to load or run.
     #[error("speech recognition failed: {0}")]
     Engine(String),
+    /// The processor lacks instructions whisper.cpp was compiled to use (listed); running it
+    /// would crash the app.
+    #[error("this computer's processor lacks {0}, which speech recognition needs")]
+    UnsupportedProcessor(String),
     /// A file system error.
     #[error(transparent)]
     Io(#[from] std::io::Error),

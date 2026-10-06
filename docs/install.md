@@ -1,9 +1,9 @@
 # Install
 
-<!-- owner: release module -->
-
-Media Identifier runs on macOS 11 or later on Apple Silicon, and on 64-bit Windows 10 or later.
-Download it from the [Releases page](https://github.com/thomas-lane/media-identifier/releases/latest):
+Media Identifier runs on macOS 11 or later on Apple Silicon, and on 64-bit Windows 10 or later
+with a processor that supports AVX2 (Intel Core from 2013 and AMD from 2015 on; many Pentium,
+Celeron and Atom processors do not, and the app says so when it starts identifying). Download it
+from the [Releases page](https://github.com/thomas-lane/media-identifier/releases/latest):
 
 | System | File |
 |---|---|
@@ -83,6 +83,6 @@ When a new version is found, a dialog shows what is new and asks before anything
 
 On Windows the installer runs in a small progress window during the relaunch.
 
-While the project's releases are private, the update service cannot be reached: background
-checks stay silent and **Check now** shows "Couldn't check for updates". Download new versions
-from the Releases page instead.
+When the update service cannot be reached (offline, or while the project's repository is
+private), background checks stay silent and **Check now** shows "Couldn't check for updates".
+Download new versions from the Releases page instead.

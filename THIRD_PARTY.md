@@ -1,8 +1,10 @@
 # Third-party software and data
 
-Direct dependencies and their licenses. Each module records its own dependencies in its section.
+Direct dependencies and their licenses, grouped by the part of the app that uses them. The full
+license texts and copyright notices of everything compiled into the app or bundled into its UI are
+in [third_party/NOTICES.md](third_party/NOTICES.md), which the app installs with it.
 
-## Shared (integrator)
+## Shared
 
 | Component | License | Used for |
 |---|---|---|
@@ -18,13 +20,13 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | @tauri-apps/api, @tauri-apps/plugin-dialog, @tauri-apps/plugin-opener | Apache-2.0 OR MIT | UI access to Tauri |
 | Vite, Vitest, TypeScript, ESLint, typescript-eslint, Testing Library (dev only) | MIT / Apache-2.0 | build and tests |
 
-## media
+## Media files (`mi-media`)
 
 | Component | License | Used for |
 |---|---|---|
 | FFmpeg 9.0.2 (ffmpeg, ffprobe sidecars, built by `scripts/build-ffmpeg.sh`) | LGPL-2.1-or-later; notice and configure lines in `third_party/ffmpeg/` | probing, audio decoding and subtitle extraction (separate executables) |
 
-## transcribe
+## Speech recognition (`mi-transcribe`)
 
 | Component | License | Used for |
 |---|---|---|
@@ -37,7 +39,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | flate2 | MIT OR Apache-2.0 | compression ratio of recognised text |
 | hound (tests and example only) | Apache-2.0 | reading WAV files |
 
-## sources
+## Online sources (`mi-sources`)
 
 | Component | License | Used for |
 |---|---|---|
@@ -53,7 +55,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | SubDL subtitles (user's own key) | SubDL terms; subtitle rights belong to their authors | reference text, cached locally |
 | LRCLIB lyrics | rights belong to their holders | reference text, cached locally; test fixtures keep two-line excerpts |
 
-## match
+## Matching (`mi-match`)
 
 | Component | License | Used for |
 |---|---|---|
@@ -62,7 +64,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | pathfinding | Apache-2.0 OR MIT | Kuhn-Munkres assignment |
 | rustfft | MIT OR Apache-2.0 | spectra for audio fingerprints |
 
-## release
+## Saving (`mi-rename`)
 
 | Component | License | Used for |
 |---|---|---|
@@ -71,7 +73,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | windows-sys (Windows only) | MIT OR Apache-2.0 | `MoveFileExW` for renames that never replace a file |
 | unicode-normalization | MIT OR Apache-2.0 | comparing file names the way macOS and Windows file systems do (NFC) |
 
-## branding
+## Branding (build tools)
 
 Build-time tools for `assets/brand/build.sh`; none of them ships with the app. The documentation
 graphics in `docs/images/` contain outlines of Inter glyphs.

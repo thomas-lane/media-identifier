@@ -20,8 +20,8 @@ flate2 = "1.1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 
-# whisper.cpp through whisper-rs: Metal on macOS, CPU on Windows. The `vulkan` feature of this
-# crate adds Vulkan on Windows when it builds reliably in CI.
+# whisper.cpp through whisper-rs: Metal on macOS, CPU on Windows. The `vulkan` feature adds a
+# Vulkan GPU backend (the app's own `vulkan` feature turns it on; docs/development.md).
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { workspace = true, features = ["metal", "tracing_backend"] }
 

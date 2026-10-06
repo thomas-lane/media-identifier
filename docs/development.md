@@ -14,10 +14,41 @@
 The commands are listed in [AGENTS.md](../AGENTS.md#commands). CI
 (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request, on
 `macos-latest` and `windows-latest`: in `ui/` `npm ci`, `npm run lint`, `npm test` and
-`npm run build`, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
-and `cargo test --workspace`. A third job on Linux lints the workflow files with
-[actionlint](https://github.com/rhysd/actionlint) and runs `scripts/build-ffmpeg.sh --check-notice`.
-Run `actionlint` locally (`brew install actionlint`) after editing a workflow.
+`npm run build`, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace` and `node scripts/third-party-notices.mjs --check`. A third job on Linux
+lints the workflow files with [actionlint](https://github.com/rhysd/actionlint) and runs
+`scripts/build-ffmpeg.sh --check-notice`. Run `actionlint` locally (`brew install actionlint`)
+after editing a workflow.
+
+Every action in the workflows is pinned to a full commit SHA, with its tag in a comment
+(`actions/checkout@3d3c… # v7`). A tag can be moved to other code at any time, and the release
+job hands the updater signing key to `tauri-action`: with that key, anyone could sign an update
+that every installed copy accepts. To update an action, look up the commit its new tag points to
+(`git ls-remote https://github.com/<owner>/<action> refs/tags/<tag> 'refs/tags/<tag>^{}'`, using
+the `^{}` line for annotated tags) and replace both the SHA and the comment.
+
+All text files are checked out with LF line endings on every OS (`* text=auto eol=lf` in
+`.gitattributes`). GitHub's Windows runners convert to CRLF otherwise, which breaks the shell
+scripts and the byte-for-byte check of the generated TypeScript types.
+
+## Third-party notices
+
+The MIT, BSD, ISC and Apache licenses of the components compiled into the app ask that their
+copyright and license notices accompany every copy of the binary. `third_party/NOTICES.md` holds
+them, and the app bundles it as `licenses/NOTICES.md`. `scripts/third-party-notices.mjs`
+generates it from the sources Cargo and npm have downloaded:
+
+- every crate the app reaches through normal (not build or dev) dependencies on either release
+  target (`cargo metadata --filter-platform`), with each crate's license, notice and copyright
+  files; crates used only by build scripts do not ship;
+- whisper.cpp's license (which covers ggml) from `whisper-rs-sys`, and a statement that SQLite,
+  bundled by `libsqlite3-sys`, is in the public domain;
+- the production npm packages Vite bundles into the UI (`npm ls --omit=dev`).
+
+Each distinct text is printed once and referred to by number. A crate published without a license
+file is listed with the license its manifest names. Run the script after changing dependencies
+(`node scripts/third-party-notices.mjs`); CI and the release workflow fail when the committed file
+is stale (`--check`). FFmpeg's notice is separate (see "ffmpeg sidecars").
 
 ## End-to-end checks
 
@@ -64,8 +95,6 @@ without the variable fails in CI when the files are stale.
 
 ## Speech recognition (whisper.cpp)
 
-<!-- owner: transcribe module -->
-
 `whisper-rs-sys` compiles the whisper.cpp sources it bundles (version 1.8.3) with CMake and links
 them statically; the version is printed by `mi_transcribe::whisper_cpp_version()`. Its build
 script also generates Rust bindings with `bindgen`, which needs libclang; when libclang is
@@ -81,9 +110,17 @@ extra is shipped.
 **Release builds: `GGML_NATIVE=OFF`.** By default ggml compiles its CPU code for the processor of
 the build machine. A release built that way on a CI runner with AVX-512 crashes with an illegal
 instruction on computers without it. With `GGML_NATIVE=OFF`, x64 builds target SSE 4.2, AVX,
-AVX2, BMI2, FMA and F16C (Intel since 2013, AMD since 2015) and leave AVX-512 off; Apple clang
-targets the Apple M1 instruction set, which every Apple Silicon Mac supports. Set it in the
-environment of every release build.
+AVX2, BMI2, FMA and F16C and leave AVX-512 off; Apple clang targets the Apple M1 instruction set,
+which every Apple Silicon Mac supports. Set it in the environment of every release build.
+
+That x64 baseline covers Intel Core processors from 2013 (Haswell) and AMD processors from 2015
+on, but not many Intel Pentium, Celeron and Atom processors, even recent ones (Gemini Lake,
+Jasper Lake, the Pentium Gold G6400), which lack AVX. whisper.cpp runs inside the app, so on such
+a PC the first model load would end the app with an illegal-instruction fault and no message.
+`WhisperTranscriber::load` therefore checks the processor first
+(`mi_transcribe::missing_processor_features`) and fails with a message naming the missing
+instructions. A build for older processors (AVX only, or SSE 4.2) is not offered because
+transcription without AVX2 is several times slower, which would make long episodes impractical.
 
 **macOS release builds link `libclang_rt.osx.a`.** whisper.cpp's Metal code checks the macOS
 version at run time. Built for an older macOS than the SDK (release builds target macOS 11), clang
@@ -93,10 +130,20 @@ library; rustc links with `-nodefaultlibs`, so `crates/mi-transcribe/build.rs` a
 such calls.
 
 **Windows.** The build needs the Visual Studio C++ build tools and CMake (both installed on
-GitHub's `windows-latest` image). The speech model runs on the CPU.
+GitHub's `windows-latest` image). The speech model runs on the CPU. The C and C++ runtimes are
+linked statically (`-C target-feature=+crt-static` in `.cargo/config.toml`, which the `cmake`
+crate passes on to whisper.cpp as `/MT`): the per-user installer ships no Visual C++
+redistributable, and an app that needed `MSVCP140.dll` or `VCRUNTIME140.dll` would not start on a
+PC without it. The release workflow checks the built executable with `dumpbin /dependents`.
 
-**Vulkan (Windows, optional).** `cargo build -p mi-transcribe --features vulkan` adds a Vulkan GPU
-backend. It needs:
+**Vulkan (Windows, optional).** The app's `vulkan` feature (forwarded to `mi-transcribe`) adds a
+Vulkan GPU backend, used when a Vulkan device is present:
+
+```bash
+npm --prefix ui exec -- tauri build --features vulkan
+```
+
+Release builds leave it off, because of the driver requirement described below. It needs:
 
 - The Vulkan SDK, with `VULKAN_SDK` pointing at it and `glslc` on `PATH`: whisper.cpp compiles its
   GPU shaders during the build, which adds many minutes. In GitHub Actions,
@@ -129,8 +176,6 @@ cargo run --release -p mi-transcribe --example transcribe -- <model.bin> <audio.
 
 ## ffmpeg sidecars
 
-<!-- owner: release module -->
-
 The app runs `ffmpeg` and `ffprobe` as separate programs ([sidecars](glossary.md#general)) that
 are bundled next to its executable. `scripts/build-ffmpeg.sh` builds them from a pinned FFmpeg
 source tarball (version and SHA-256 at the top of the script) into
@@ -142,7 +187,7 @@ source tarball (version and SHA-256 at the top of the script) into
 | `x86_64-pc-windows-msvc` | an [MSYS2](https://www.msys2.org) MINGW64 shell | `pacman -S make curl diffutils tar xz mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm mingw-w64-x86_64-binutils` |
 
 ```bash
-scripts/build-ffmpeg.sh                    # build for this computer (about a minute on Apple Silicon)
+scripts/build-ffmpeg.sh                    # build for this computer (a few minutes)
 scripts/build-ffmpeg.sh --verify           # check built sidecars without rebuilding
 scripts/build-ffmpeg.sh --print-configure  # the configure options for this computer
 scripts/build-ffmpeg.sh --check-notice     # third_party/ffmpeg/NOTICE.md matches the script
@@ -184,8 +229,10 @@ MI_REQUIRE_FFMPEG_TESTS=1 cargo test -p mi-media --test ffmpeg
 To change the components, edit the lists at the top of the script, then update the option lines in
 `third_party/ffmpeg/NOTICE.md` (`--check-notice` compares them line by line, in CI and in the
 release workflow) and the component table in `docs/architecture.md`. The release workflow caches
-the built sidecars under a key derived from the script's contents, so any change to the script
-rebuilds them.
+the built sidecars under a key derived from the script's contents. GitHub keeps a cache under
+the tag whose run saved it, and a run can restore only caches of its own ref or of the default
+branch, so the cache speeds up re-runs of one tag's workflow; each new tag builds the sidecars
+and the app from scratch.
 
 The LGPL asks that people who receive the programs can get their source and replace them. The app
 bundles `third_party/ffmpeg/NOTICE.md` (version, source, checksum, configure options, how to
@@ -194,8 +241,6 @@ replace the programs) and FFmpeg's `COPYING.LGPLv2.1` under `licenses/ffmpeg/` i
 tarball to every release.
 
 ## Updater signing key
-
-<!-- owner: release module -->
 
 Updates are verified with a minisign key pair created by `tauri signer generate`. The public key
 is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) and is compiled into the app. The
@@ -222,8 +267,6 @@ Never commit the private key or print it in a log; `.gitignore` excludes `*.key`
 
 ## Releases
 
-<!-- owner: release module -->
-
 Builds are not code-signed on either system. On macOS the bundler gives the app an ad-hoc
 signature (`bundle.macOS.signingIdentity: "-"`), which Apple Silicon requires to run any code;
 it identifies no developer, so macOS still asks the user to confirm the first launch
@@ -249,10 +292,12 @@ To publish a version:
      created) and attaches the FFmpeg source tarball.
    - **build** runs once on `macos-latest` for `aarch64-apple-darwin` and once on
      `windows-latest` for `x86_64-pc-windows-msvc`. It restores or builds the ffmpeg sidecars,
-     then [tauri-action](https://github.com/tauri-apps/tauri-action) runs `tauri build` with
+     checks that `third_party/NOTICES.md` is current, then
+     [tauri-action](https://github.com/tauri-apps/tauri-action) runs `tauri build` with
      `MI_REQUIRE_SIDECARS=1` (a missing or empty sidecar fails the build), signs the update files
      with the private key, uploads them to the draft, and merges its platform into the
-     release's `latest.json` together with the notes.
+     release's `latest.json` together with the notes. On Windows it then fails if the app
+     needs the Visual C++ runtime DLLs (see "Speech recognition").
 4. Check the draft. It holds the macOS `.dmg`, the macOS update archive (`.app.tar.gz` and its
    `.sig`), the Windows installer (`-setup.exe`, per-user, no administrator rights) and its
    `.sig`, `latest.json` and `ffmpeg-<version>.tar.xz`. Editing the release page later does not
@@ -263,11 +308,10 @@ To publish a version:
    GitHub serves `releases/latest` from the newest published release that is not a draft or
    pre-release, so installed copies see the version only once it is published.
 
-The repository and its releases are private for now. GitHub answers requests for a private
-repository's release files only when they carry an access token, and the app sends none, so
-every update check fails until the repository is public: background checks log the failure and
-"Check now" shows "Couldn't check for updates". Putting a token into the app is not an option,
-because anyone with a copy could read it.
+The update check sends no access token. GitHub answers requests for a private repository's
+release files only with one, so while the repository is private every check fails: background
+checks log the failure and "Check now" shows "Couldn't check for updates". Putting a token into
+the app is not an option, because anyone with a copy could read it.
 
 A release build can be made locally the same way (the signing key variables are needed only
 because `createUpdaterArtifacts` is on):

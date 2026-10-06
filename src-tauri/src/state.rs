@@ -25,7 +25,10 @@ impl AppState {
     /// Sidecars are looked up next to the executable; development builds also search `PATH`.
     pub fn initialise(app: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
         let config_dir = app.path().app_config_dir()?;
-        let data_dir = app.path().app_data_dir()?;
+        // Models (up to about 0.75 GB), the provider cache, saved jobs and History go to the
+        // local, not roaming, data folder: on Windows a roaming profile would copy them to and
+        // from a server at every sign-in. On macOS the two folders are the same.
+        let data_dir = app.path().app_local_data_dir()?;
         let settings = SettingsStore::load(&config_dir)?;
         let exe_dir = std::env::current_exe()?
             .parent()

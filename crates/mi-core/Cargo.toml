@@ -22,6 +22,10 @@ tracing.workspace = true
 tokio.workspace = true
 async-trait = "0.1.92"
 
+[features]
+# Vulkan GPU speech recognition on Windows (see docs/development.md, "Speech recognition").
+vulkan = ["mi-transcribe/vulkan"]
+
 [dev-dependencies]
 tempfile.workspace = true
 tracing-subscriber.workspace = true

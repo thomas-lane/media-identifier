@@ -1,3 +1,5 @@
-# Shell scripts keep LF line endings on every checkout, including Windows runners where Git
-# would otherwise convert them to CRLF and bash would fail on the carriage returns.
-*.sh text eol=lf
+# Every text file is checked out with LF line endings on every OS. GitHub's Windows runners set
+# core.autocrlf=true, which would otherwise convert them to CRLF: bash fails on the carriage
+# returns of the shell scripts, and the bindings test (crates/mi-types/tests/bindings.rs)
+# compares the committed TypeScript types byte for byte with freshly generated ones (LF).
+* text=auto eol=lf

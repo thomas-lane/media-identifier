@@ -19,7 +19,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,6 +37,11 @@ const STATED = {
   "libsqlite3-sys":
     "Includes SQLite (https://sqlite.org), which is in the public domain: \"The author disclaims copyright to this source code.\"",
 };
+
+/** A path relative to `dir` with `/` separators, so the output is the same on every OS. */
+function posixRelative(dir, f) {
+  return relative(dir, f).split(sep).join("/");
+}
 
 function run(cmd, args, cwd = ROOT) {
   // On Windows npm is a batch file (npm.cmd), which Node starts only through a shell. The
@@ -91,7 +96,7 @@ function rustCrates(target) {
         license: p.license ?? (p.license_file ? `see ${p.license_file}` : "not stated"),
         repository: p.repository ?? p.homepage ?? null,
         texts: files.filter(existsSync).map((f) => ({
-          file: relative(dir, f),
+          file: posixRelative(dir, f),
           text: normalise(readFileSync(f, "utf8")),
         })),
         stated: STATED[p.name] ?? null,
@@ -122,7 +127,7 @@ function npmPackages() {
       version,
       license: typeof pkg.license === "string" ? pkg.license : "not stated",
       repository: typeof pkg.repository === "string" ? pkg.repository : (pkg.repository?.url ?? null),
-      texts: licenseFiles(dir).map((f) => ({ file: relative(dir, f), text: normalise(readFileSync(f, "utf8")) })),
+      texts: licenseFiles(dir).map((f) => ({ file: posixRelative(dir, f), text: normalise(readFileSync(f, "utf8")) })),
       stated: null,
     };
   });
@@ -174,6 +179,13 @@ if (process.argv.includes("--check")) {
   const current = existsSync(OUT) ? readFileSync(OUT, "utf8") : "";
   if (current !== output) {
     console.error("third_party/NOTICES.md is out of date: run node scripts/third-party-notices.mjs");
+    const was = current.split("\n");
+    const now = output.split("\n");
+    const at = now.findIndex((line, i) => line !== was[i]);
+    const line = at === -1 ? now.length : at;
+    console.error(`first difference at line ${line + 1}:`);
+    console.error(`  committed: ${JSON.stringify(was[line] ?? "(end of file)")}`);
+    console.error(`  generated: ${JSON.stringify(now[line] ?? "(end of file)")}`);
     process.exit(1);
   }
   console.log("third_party/NOTICES.md is current");

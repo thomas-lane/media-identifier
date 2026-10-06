@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use mi_types::{
-    ApiError, ApiKeyProvider, ErrorCode, HistoryEntry, HistoryId, JobId, JobRequest, JobResults,
-    ModelStatus, RecentJob, RenameOutcome, RenamePlan, RenamePlanRequest, ScanSummary, Settings,
-    ShowCandidate, SourceStatus, SpeechModel, UndoOutcome,
+    ApiError, ApiKeyProvider, Attribution, ErrorCode, HistoryEntry, HistoryId, JobId, JobRequest,
+    JobResults, ModelStatus, RecentJob, RenameOutcome, RenamePlan, RenamePlanRequest, ScanSummary,
+    Settings, ShowCandidate, SourceStatus, SpeechModel, UndoOutcome,
 };
 use tauri::State;
 
@@ -20,6 +20,7 @@ pub const COMMANDS: &[&str] = &[
     "save_settings",
     "set_api_key",
     "source_status",
+    "attributions",
     "model_status",
     "download_model",
     "pause_model_download",
@@ -95,6 +96,13 @@ pub fn set_api_key(
 #[tauri::command]
 pub fn source_status(state: State<'_, AppState>) -> Vec<SourceStatus> {
     state.engine.source_status()
+}
+
+/// The credits each online source requires (About screen and the credit lines where their data
+/// is shown).
+#[tauri::command]
+pub fn attributions() -> Vec<Attribution> {
+    mi_sources::attributions()
 }
 
 /// Download state of a speech model.
@@ -243,6 +251,91 @@ mod tests {
             assert!(
                 client.contains(&format!("\"{name}\"")),
                 "tauri.ts does not call {name}"
+            );
+        }
+    }
+
+    /// The URL patterns `opener:allow-open-url` allows. Each must be an exact URL or end in
+    /// `/*`, so this test can match them without the plugin's glob engine.
+    fn allowed_urls() -> Vec<String> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/default.json");
+        let capability: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let permissions = capability["permissions"].as_array().unwrap();
+        let open_url = permissions
+            .iter()
+            .find(|p| p["identifier"] == "opener:allow-open-url")
+            .expect("a scoped opener:allow-open-url");
+        open_url["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["url"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn url_allowed(patterns: &[String], url: &str) -> bool {
+        patterns.iter().any(|p| match p.strip_suffix('*') {
+            Some(prefix) => url.starts_with(prefix),
+            None => url == p,
+        })
+    }
+
+    #[test]
+    fn every_link_the_window_opens_is_allowed() {
+        let patterns = allowed_urls();
+        for p in &patterns {
+            assert!(
+                p.starts_with("https://") && !p[..p.len() - 1].contains('*'),
+                "{p}"
+            );
+        }
+        // Literal links in the UI, and the credits the app sends it.
+        let mut urls: Vec<String> = Vec::new();
+        let screens = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src");
+        let mut stack = vec![std::path::PathBuf::from(screens)];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                let name = path.to_string_lossy().into_owned();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if (name.ends_with(".tsx") || name.ends_with(".ts"))
+                    && !name.contains(".test.")
+                    && !name.contains("mock")
+                {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    for part in text.split('"').skip(1).step_by(2) {
+                        if part.starts_with("https://") {
+                            urls.push(part.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+        for a in mi_sources::attributions() {
+            urls.push(a.url);
+            urls.extend(a.license_url);
+        }
+        assert!(urls.len() > 5, "{urls:?}");
+        for url in urls {
+            assert!(url_allowed(&patterns, &url), "{url} is not allowed");
+        }
+        assert!(!url_allowed(
+            &patterns,
+            "https://www.tvmaze.com.evil.example/"
+        ));
+        assert!(!url_allowed(&patterns, "http://www.tvmaze.com/"));
+    }
+
+    #[test]
+    fn every_scanned_video_extension_can_be_played() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/default.json");
+        let text = std::fs::read_to_string(path).unwrap();
+        for ext in mi_media::VIDEO_EXTENSIONS {
+            assert!(
+                text.contains(&format!("\"**/*.{ext}\"")),
+                "opener:allow-open-path lacks {ext}"
             );
         }
     }

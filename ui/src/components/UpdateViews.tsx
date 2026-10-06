@@ -100,6 +100,19 @@ export function UpdateDialog() {
 
 export function UpdateBanner({ jobRunning }: { jobRunning: boolean }) {
   const updates = useUpdates();
+  const failure = updates.backgroundFailure;
+  if (failure) {
+    return (
+      <div className="banner" role="status">
+        <span className="grow">
+          <b>The update to {failure.version} couldn't be downloaded:</b> {failure.message}
+        </span>
+        <button type="button" className="btn small" onClick={updates.showFailure}>
+          Details…
+        </button>
+      </div>
+    );
+  }
   if (!updates.readyVersion || !updates.bannerVisible) return null;
   return (
     <div className="banner" role="status">

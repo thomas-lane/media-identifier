@@ -37,13 +37,20 @@ describe("App shell", () => {
   });
 
   it("credits the data sources on the About screen", async () => {
-    renderApp();
+    const { backend } = renderApp();
+    const open = vi.spyOn(backend, "openUrl");
     await userEvent.click(screen.getByRole("button", { name: "About" }));
-    for (const name of ["TVmaze", "TMDb", "SubDL", "LRCLIB", "FFmpeg", "whisper.cpp"]) {
-      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    for (const name of ["Episode lists from TVmaze", "Subtitles from SubDL", "Lyrics from LRCLIB", "FFmpeg", "whisper.cpp"]) {
+      expect(await screen.findByRole("button", { name })).toBeInTheDocument();
     }
-    expect(screen.getByText(/CC BY-SA 4\.0/)).toBeInTheDocument();
-    expect(screen.getByText(/uses the TMDB API but is not endorsed or certified by TMDB/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "CC BY-SA 4.0" }));
+    expect(open).toHaveBeenCalledWith("https://creativecommons.org/licenses/by-sa/4.0/");
+    expect(
+      screen.getByRole("button", {
+        name: "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("TMDB")).toBeInTheDocument();
   });
 });
 
@@ -106,8 +113,32 @@ describe("Start and Confirm show", () => {
   it("does not start until the speech model is ready", async () => {
     renderApp(createMockBackend({ stepMs: 1, downloadStepMs: 10_000 }));
     await toConfirmScreen();
-    expect(await screen.findByText(/The speech model is still downloading/)).toBeInTheDocument();
+    expect(await screen.findByText(/Identify is available once the speech model has downloaded/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Identify 14 files" })).toBeDisabled();
+  });
+
+  it("says why Identify waits for a stopped model download, and restarts it", async () => {
+    const backend = createMockBackend({ stepMs: 1, downloadStepMs: 10_000 });
+    renderApp(backend);
+    await toConfirmScreen();
+    await screen.findByText(/Identify is available once the speech model has downloaded/);
+    // Paused before any bytes arrived, the model is simply not downloaded.
+    await act(async () => backend.pauseModelDownload());
+    expect(await screen.findByText(/The speech model is not downloaded yet/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Download" }));
+    expect(await screen.findByText(/Identify is available once the speech model has downloaded/)).toBeInTheDocument();
+  });
+
+  it("warns that subtitles are off without a SubDL key, and credits TVmaze with its license", async () => {
+    renderApp();
+    await toConfirmScreen();
+    expect(await screen.findByText(/Subtitles are off: without a SubDL key/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add a free SubDL key in Settings" }));
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Identify" }));
+    expect(await screen.findByRole("button", { name: "Episode lists from TVmaze" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CC BY-SA 4.0" })).toBeInTheDocument();
+    expect(screen.queryByAltText("TMDB")).not.toBeInTheDocument();
   });
 });
 
@@ -147,6 +178,14 @@ describe("Identifying", () => {
     await userEvent.click(screen.getByRole("button", { name: "Review finished files" }));
     expect(await screen.findByText(/Still identifying: 1 of 2 files finished/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue to rename →" })).toBeDisabled();
+
+    // Progress and Cancel stay within reach from Review.
+    await userEvent.click(screen.getByRole("button", { name: "Show progress" }));
+    expect(await screen.findByRole("heading", { name: /^Identifying Schoolhouse Rock!/ })).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "Review finished files" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel identifying" }));
+    await waitFor(() => expect(screen.queryByText(/Still identifying/)).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Continue to rename →" })).toBeEnabled();
   });
 
   it("cancels", async () => {
@@ -213,6 +252,24 @@ describe("Review", () => {
     expect(within(screen.getByRole("listbox", { name: "Files" })).getAllByRole("option")).toHaveLength(3);
   });
 
+  it("asks for approval after another episode is picked, keeping the file in view", async () => {
+    await toReview();
+    await userEvent.click(screen.getByRole("radio", { name: "Check 3" }));
+    await userEvent.click(screen.getByRole("option", { name: /title_t08\.mkv/ }));
+    const pick = screen.getByLabelText("Suggested");
+    await userEvent.selectOptions(pick, within(pick).getAllByRole("option")[1]!);
+    // Still listed and selected, still to check, and nothing was approved.
+    expect(screen.getByRole("option", { name: /title_t08\.mkv/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/9 approved · 3 to check/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.getByText(/10 approved · 2 to check/)).toBeInTheDocument();
+    // An approval can be taken back.
+    await userEvent.click(screen.getByRole("radio", { name: "All 15" }));
+    await userEvent.click(screen.getByRole("option", { name: /title_t08\.mkv/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+    expect(screen.getByText(/9 approved · 3 to check/)).toBeInTheDocument();
+  });
+
   it("explains the play-all instead of offering episodes", async () => {
     await toReview();
     await userEvent.click(screen.getByRole("option", { name: /title_t00\.mkv/ }));
@@ -231,6 +288,11 @@ describe("Review", () => {
     await screen.findByRole("heading", { name: /^Review/ }, { timeout: 3000 });
     await userEvent.click(screen.getByRole("button", { name: "▶ Play" }));
     expect(openFile).toHaveBeenCalledWith("/Volumes/Rips/SCHOOLHOUSE_ROCK_D1/title_t01.mkv");
+
+    // A file that cannot be opened says so.
+    openFile.mockRejectedValueOnce(new Error("forbidden path"));
+    await userEvent.click(screen.getByRole("button", { name: "▶ Play" }));
+    expect(await screen.findByText(/Couldn't open title_t01\.mkv/)).toBeInTheDocument();
   });
 });
 
@@ -254,6 +316,10 @@ describe("Rename and History", () => {
     const entry = (await screen.findAllByRole("listitem")).find((li) => li.textContent?.includes("Renamed 9 files"))!;
     await userEvent.click(within(entry).getByRole("button", { name: "Undo…" }));
     expect(within(entry).getByText("Give these 9 files their original names back?")).toBeInTheDocument();
+    expect(within(entry).getByRole("button", { name: "Undo rename" })).toHaveFocus();
+    await userEvent.click(within(entry).getByRole("button", { name: "Cancel" }));
+    expect(within(entry).getByRole("button", { name: "Undo…" })).toHaveFocus();
+    await userEvent.click(within(entry).getByRole("button", { name: "Undo…" }));
     await userEvent.click(within(entry).getByRole("button", { name: "Undo rename" }));
     expect(await screen.findByText("Restored 9 files.")).toBeInTheDocument();
     expect(screen.getAllByText(/^Undone/).length).toBeGreaterThan(0);
@@ -338,6 +404,7 @@ describe("Rename and History", () => {
     await toReview();
     await userEvent.click(screen.getByRole("option", { name: /title_t11\.mkv/ }));
     await userEvent.selectOptions(screen.getByLabelText("Suggested"), "S02E02 · Elementary, My Dear (53%)");
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue to rename →" }));
     expect(await screen.findByText(/would both become/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Rename \d+ files$/ })).toBeDisabled();
@@ -421,6 +488,35 @@ describe("Updates", () => {
     await new Promise((r) => setTimeout(r, 1400));
     expect(screen.queryByText(/Update downloaded\./)).not.toBeInTheDocument();
   }, 10_000);
+
+  it("keeps a hidden download out of the way: Check now shows its progress, a failure goes to the banner", async () => {
+    const backend = createMockBackend({ modelReady: true, stepMs: 200 });
+    let fail: ((e: unknown) => void) | null = null;
+    backend.downloadUpdate = () =>
+      new Promise<void>((_, reject) => {
+        fail = reject;
+      });
+    renderApp(backend);
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Check now" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Install update" }));
+    let progress = await screen.findByRole("dialog", { name: /Downloading Media Identifier 1\.3\.0/ });
+    await userEvent.click(within(progress).getByRole("button", { name: "Hide" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Check now" }));
+    progress = await screen.findByRole("dialog", { name: /Downloading Media Identifier 1\.3\.0/ });
+    expect(screen.queryByRole("dialog", { name: /A new version/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Version 1.3.0 is downloading.")).toBeInTheDocument();
+    await userEvent.click(within(progress).getByRole("button", { name: "Hide" }));
+
+    await act(async () => fail!({ code: "network", message: "the connection dropped" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText(/the connection dropped/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Details…" }));
+    const dialog = await screen.findByRole("dialog", { name: /A new version/ });
+    expect(within(dialog).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
 
   it("skips a version", async () => {
     const backend = createMockBackend({ modelReady: true });

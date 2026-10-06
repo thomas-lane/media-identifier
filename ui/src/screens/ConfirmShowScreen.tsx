@@ -7,10 +7,13 @@ import { toApiError, useBackend } from "../api";
 import { ButtonRow, Pill } from "../components/common";
 import { formatDuration, plural } from "../lib/format";
 import { baseName, seasonFromFolder } from "../lib/paths";
+import { EpisodeDataCredit } from "../components/Credits";
 import { useIdentify } from "../state/identify";
+import { useNav } from "../state/nav";
 import { useModel } from "../state/model";
 import { useSettings } from "../state/settings";
-import type { EpisodeOrdering, ScanSummary, ShowCandidate } from "../types/generated";
+import type { EpisodeOrdering, ScanSummary, ShowCandidate, SourceStatus } from "../types/generated";
+import type { ModelHandle } from "../state/model";
 
 /** Files at most this long are "short" (one episode of a musical short, or a sitcom act). */
 const SHORT_FILE_S = 6 * 60;
@@ -42,6 +45,21 @@ export function ConfirmShowScreen() {
   const [ordering, setOrdering] = useState<EpisodeOrdering>("aired");
   const [language, setLanguage] = useState<string>(settings?.language ?? "en");
   const ids = useId();
+  const nav = useNav();
+  const [sources, setSources] = useState<SourceStatus[] | null>(null);
+  useEffect(() => {
+    let active = true;
+    backend
+      .sourceStatus()
+      .then((list) => active && setSources(list))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [backend]);
+  const subdl = sources?.find((x) => x.provider === "subdl")?.state.kind;
+  const subtitlesOff = subdl === "needsKey" || subdl === "keyRejected" ? subdl : null;
+  const tmdbNumbering = sources?.some((x) => x.provider === "tmdb" && x.hasKey && x.state.kind === "ready") ?? false;
 
   const search = async (q: string) => {
     if (!q.trim()) return;
@@ -197,28 +215,70 @@ export function ConfirmShowScreen() {
           {state.error}
         </p>
       )}
-      <div className="row-between">
-        <span className="muted small">
-          Show information from{" "}
-          <button type="button" className="btn link" onClick={() => void backend.openUrl("https://www.tvmaze.com")}>
-            TVmaze
+      {subtitlesOff && (
+        <p className="alert warn small" role="status" style={{ margin: 0 }}>
+          {subtitlesOff === "needsKey"
+            ? "Subtitles are off: without a SubDL key, files are matched by titles, lyrics, summaries and length, which is less reliable for spoken shows. "
+            : "Subtitles are off: SubDL did not accept your key. "}
+          <button type="button" className="btn link" onClick={() => nav.go("settings")}>
+            {subtitlesOff === "needsKey" ? "Add a free SubDL key in Settings" : "Check the key in Settings"}
           </button>
-          {!modelReady && " · The speech model is still downloading."}
-        </span>
-        <ButtonRow
-          others={[
-            <button key="back" type="button" className="btn" onClick={() => dispatch({ type: "reset" })}>
-              Back
-            </button>,
-          ]}
-          primary={
-            <button type="button" className="btn primary" disabled={!chosen || !modelReady || count === 0} onClick={identify}>
-              Identify {plural(count, "file")}
-            </button>
-          }
-        />
-      </div>
+        </p>
+      )}
+      {!modelReady && <ModelNotice model={model} />}
+      <EpisodeDataCredit tmdb={tmdbNumbering} />
+      <ButtonRow
+        leading={
+          <button type="button" className="btn" onClick={() => dispatch({ type: "reset" })}>
+            Back
+          </button>
+        }
+        primary={
+          <button type="button" className="btn primary" disabled={!chosen || !modelReady || count === 0} onClick={identify}>
+            Identify {plural(count, "file")}
+          </button>
+        }
+      />
     </section>
+  );
+}
+
+/** Why "Identify" waits for the speech model, with the way to get it. */
+function ModelNotice({ model }: { model: ModelHandle }) {
+  const s = model.status?.state;
+  if (!s || s.kind === "ready") return null;
+  const total = model.status?.info.sizeBytes ?? 0;
+  let text: string;
+  let action: string | null = null;
+  switch (s.kind) {
+    case "downloading":
+      text = `Identify is available once the speech model has downloaded (${total > 0 ? Math.floor((s.downloaded / total) * 100) : 0}% so far).`;
+      break;
+    case "verifying":
+      text = "Identify is available once the speech model download has been checked.";
+      break;
+    case "paused":
+      text = "The speech model download is paused. Identify is available once it has finished.";
+      action = "Resume download";
+      break;
+    case "failed":
+      text = `The speech model download stopped: ${s.message}`;
+      action = "Try again";
+      break;
+    case "missing":
+      text = "The speech model is not downloaded yet. Identify is available once it has downloaded.";
+      action = "Download";
+      break;
+  }
+  return (
+    <p className={`alert small ${s.kind === "failed" ? "bad" : "warn"}`} role="status" style={{ margin: 0 }}>
+      {model.error ? `The speech model download stopped: ${model.error}` : text}{" "}
+      {(action || model.error) && (
+        <button type="button" className="btn small" onClick={() => void model.download()}>
+          {action ?? "Try again"}
+        </button>
+      )}
+    </p>
   );
 }
 

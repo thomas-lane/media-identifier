@@ -14,10 +14,12 @@
   --accent: #2f6fde;
   --accent-hover: #255fc4;
   --accent-soft: #e6eefc;
+  /* Accent-coloured text on --accent-soft (selected items, info pills): 4.5:1 or more. */
+  --accent-text: #2459b8;
   --on-accent: #ffffff;
-  --ok: #1d8a4e;
+  --ok: #17713f;
   --ok-soft: #e3f4ea;
-  --warn: #a86400;
+  --warn: #8a5200;
   --warn-soft: #fdf1dc;
   --bad: #b4232c;
   --bad-soft: #fbe5e6;
@@ -38,6 +40,7 @@
     --accent: #6ea1ff;
     --accent-hover: #8bb4ff;
     --accent-soft: #24324c;
+    --accent-text: #8bb4ff;
     --on-accent: #0e1726;
     --ok: #5cc88a;
     --ok-soft: #1f3a2b;
@@ -140,7 +143,7 @@ a {
 
 .nav-item[aria-current="page"] {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -235,6 +238,16 @@ h2 {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* An action row that stays in view at the bottom of a scrolling screen (long file tables). */
+.sticky-foot {
+  position: sticky;
+  bottom: 0;
+  padding: 10px 0;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  z-index: 1;
 }
 
 .stack {
@@ -357,7 +370,7 @@ select.field {
 .seg button[aria-pressed="true"],
 .seg button[aria-checked="true"] {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -404,7 +417,7 @@ select.field {
 }
 
 .pill.info {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 
@@ -836,6 +849,16 @@ kbd {
   gap: 8px;
   align-items: center;
   margin-top: 6px;
+}
+
+.key-form .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.key-form .row-end {
+  flex: none;
+  flex-wrap: nowrap;
 }
 
 /* ---------- Updates ---------- */

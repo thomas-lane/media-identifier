@@ -1,13 +1,35 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window.",
+  "description": "Permissions for the main window. Links open only on the listed sites; files open only when they have a video extension the scan accepts (matched without regard to case).",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "opener:allow-open-url",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://www.tvmaze.com" },
+        { "url": "https://www.tvmaze.com/*" },
+        { "url": "https://www.themoviedb.org" },
+        { "url": "https://www.themoviedb.org/*" },
+        { "url": "https://subdl.com" },
+        { "url": "https://subdl.com/*" },
+        { "url": "https://lrclib.net" },
+        { "url": "https://lrclib.net/*" },
+        { "url": "https://creativecommons.org" },
+        { "url": "https://creativecommons.org/*" },
+        { "url": "https://github.com/ggml-org/whisper.cpp" },
+        { "url": "https://github.com/ggml-org/whisper.cpp/*" },
+        { "url": "https://ffmpeg.org" },
+        { "url": "https://ffmpeg.org/*" },
+        { "url": "https://tauri.app" },
+        { "url": "https://tauri.app/*" },
+        { "url": "https://react.dev" },
+        { "url": "https://react.dev/*" }
+      ]
+    },
     {
       "identifier": "opener:allow-open-path",
       "allow": [
@@ -18,19 +40,10 @@
         { "path": "**/*.avi" },
         { "path": "**/*.ts" },
         { "path": "**/*.m2ts" },
+        { "path": "**/*.mts" },
         { "path": "**/*.mpg" },
         { "path": "**/*.mpeg" },
-        { "path": "**/*.vob" },
-        { "path": "**/*.MKV" },
-        { "path": "**/*.MP4" },
-        { "path": "**/*.M4V" },
-        { "path": "**/*.MOV" },
-        { "path": "**/*.AVI" },
-        { "path": "**/*.TS" },
-        { "path": "**/*.M2TS" },
-        { "path": "**/*.MPG" },
-        { "path": "**/*.MPEG" },
-        { "path": "**/*.VOB" }
+        { "path": "**/*.vob" }
       ]
     }
   ]

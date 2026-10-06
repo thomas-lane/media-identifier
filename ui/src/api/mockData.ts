@@ -3,6 +3,7 @@
 // output, and the season/episode numbers follow the mockup rather than any provider.
 
 import type {
+  Attribution,
   Candidate,
   Episode,
   EpisodeKey,
@@ -391,4 +392,24 @@ export const SOURCES: SourceStatus[] = [
   { provider: "lrclib", state: { kind: "ready" }, hasKey: false },
   { provider: "subdl", state: { kind: "needsKey" }, hasKey: false },
   { provider: "tmdb", state: { kind: "needsKey" }, hasKey: false },
+];
+
+/** The credits `mi_sources::attributions` returns, in the same order. */
+export const ATTRIBUTIONS: Attribution[] = [
+  {
+    provider: "tvmaze",
+    text: "Episode lists from TVmaze",
+    url: "https://www.tvmaze.com",
+    license: "CC BY-SA 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/",
+  },
+  { provider: "lrclib", text: "Lyrics from LRCLIB", url: "https://lrclib.net", license: null, licenseUrl: null },
+  { provider: "subdl", text: "Subtitles from SubDL", url: "https://subdl.com", license: null, licenseUrl: null },
+  {
+    provider: "tmdb",
+    text: "This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.",
+    url: "https://www.themoviedb.org",
+    license: null,
+    licenseUrl: null,
+  },
 ];

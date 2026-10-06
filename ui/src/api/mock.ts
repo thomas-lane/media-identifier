@@ -23,6 +23,7 @@ import type {
 import type { Backend, FileDropEvent, Unsubscribe } from "./backend";
 import { apiError } from "./errors";
 import {
+  ATTRIBUTIONS,
   EPISODES,
   MATCHES,
   SAMPLE_FOLDER,
@@ -282,6 +283,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     },
     sourceStatus: async () =>
       SOURCES.map((s) => (keys.has(s.provider) ? { ...s, hasKey: true, state: { kind: "ready" } } : s)),
+    attributions: async () => structuredClone(ATTRIBUTIONS),
 
     modelStatus: async (model) => modelStatus(model),
     downloadModel: (model) =>

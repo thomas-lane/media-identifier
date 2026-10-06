@@ -3,7 +3,7 @@
 // downloads until the user chooses Install, and nothing interrupts a running identification:
 // a background announcement waits until the job ends, and Relaunch is disabled while it runs.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { toApiError, useBackend } from "../api";
@@ -23,6 +23,12 @@ export interface UpdatesValue {
   bannerVisible: boolean;
   /** Message after a refused relaunch. */
   relaunchError: string | null;
+  /** Version being downloaded (also while its dialog is hidden); null when none. */
+  downloadingVersion: string | null;
+  /** A download that failed while its dialog was hidden, shown in the banner instead of a dialog. */
+  backgroundFailure: { version: string; message: string } | null;
+  /** Opens the dialog for the background failure, with Try again. */
+  showFailure(): void;
   /** "Check now": opens the dialog when a version is available and returns the result. */
   checkNow(): Promise<UpdateCheck>;
   install(): Promise<void>;
@@ -46,6 +52,26 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
   const [bannerVisible, setBannerVisible] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [relaunchError, setRelaunchError] = useState<string | null>(null);
+  // The download in flight is tracked apart from the dialog, which the user can hide or replace.
+  const [inFlight, setInFlight] = useState<UpdateInfo | null>(null);
+  const [backgroundFailure, setBackgroundFailure] = useState<{ info: UpdateInfo; message: string } | null>(null);
+  const hiddenRef = useRef(false);
+  const inFlightRef = useRef<UpdateInfo | null>(null);
+  useEffect(() => {
+    hiddenRef.current = hidden;
+    inFlightRef.current = inFlight;
+  }, [hidden, inFlight]);
+
+  /** A failed download: in the dialog when it is on screen, in the banner when it was hidden. */
+  const failed = useCallback((info: UpdateInfo, message: string) => {
+    setInFlight(null);
+    if (hiddenRef.current) {
+      setBackgroundFailure({ info, message });
+      setDialog({ kind: "closed" });
+    } else {
+      setDialog({ kind: "failed", info, message });
+    }
+  }, []);
 
   // Launch-time announcement: queue it, then show it when no job is running.
   useEffect(() => {
@@ -80,11 +106,13 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
               : d,
           );
         } else if (event.kind === "downloaded") {
+          setInFlight(null);
           setReadyVersion(event.version);
           setBannerVisible(true);
           setDialog({ kind: "closed" });
         } else {
-          setDialog((d) => (d.kind === "closed" ? d : { kind: "failed", info: d.info, message: event.message }));
+          const info = inFlightRef.current;
+          if (info) failed(info, event.message);
         }
       })
       .then((u) => {
@@ -95,7 +123,7 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
       active = false;
       unsubscribe?.();
     };
-  }, [backend]);
+  }, [backend, failed]);
 
   const checkNow = useCallback(async () => {
     let result: UpdateCheck;
@@ -104,23 +132,36 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
     } catch (e) {
       result = { kind: "failed", message: toApiError(e).message };
     }
-    if (result.kind === "available" && !readyVersion) setDialog({ kind: "available", info: result.info });
+    if (result.kind === "available" && !readyVersion) {
+      // While a download runs, show its progress again rather than offering it a second time.
+      if (inFlight) setHidden(false);
+      else setDialog({ kind: "available", info: result.info });
+    }
     return result;
-  }, [backend, readyVersion]);
+  }, [backend, readyVersion, inFlight]);
 
   const install = useCallback(async () => {
     if (current.kind !== "available" && current.kind !== "failed") return;
     const info = current.info;
     setQueued(null);
     setHidden(false);
+    setBackgroundFailure(null);
+    setInFlight(info);
     setDialog({ kind: "downloading", info, downloaded: 0, total: null });
     try {
       await backend.downloadUpdate();
     } catch (e) {
       const err = toApiError(e);
-      setDialog(err.code === "cancelled" ? { kind: "closed" } : { kind: "failed", info, message: err.message });
+      // "busy" means this update is already downloading: keep showing its progress.
+      if (err.code === "busy") return;
+      if (err.code === "cancelled") {
+        setInFlight(null);
+        setDialog({ kind: "closed" });
+      } else {
+        failed(info, err.message);
+      }
     }
-  }, [backend, current]);
+  }, [backend, current, failed]);
 
   const skip = useCallback(async () => {
     if (current.kind !== "available") return;
@@ -139,7 +180,14 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
     setDialog({ kind: "closed" });
   }, []);
   const hideDownload = useCallback(() => setHidden(true), []);
+  const showFailure = useCallback(() => {
+    if (!backgroundFailure) return;
+    setHidden(false);
+    setDialog({ kind: "failed", info: backgroundFailure.info, message: backgroundFailure.message });
+    setBackgroundFailure(null);
+  }, [backgroundFailure]);
   const cancelDownload = useCallback(async () => {
+    setInFlight(null);
     setDialog({ kind: "closed" });
     try {
       await backend.cancelUpdateDownload();
@@ -164,6 +212,9 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
       readyVersion,
       bannerVisible,
       relaunchError,
+      downloadingVersion: inFlight?.version ?? null,
+      backgroundFailure: backgroundFailure && { version: backgroundFailure.info.version, message: backgroundFailure.message },
+      showFailure,
       checkNow,
       install,
       skip,
@@ -179,6 +230,9 @@ export function UpdatesProvider({ jobRunning, children }: { jobRunning: boolean;
       readyVersion,
       bannerVisible,
       relaunchError,
+      inFlight,
+      backgroundFailure,
+      showFailure,
       checkNow,
       install,
       skip,

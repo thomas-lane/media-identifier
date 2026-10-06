@@ -128,19 +128,34 @@ implements it in memory with sample data (`mockData.ts`), simulating jobs, downl
 with timers. `getBackend()` picks the mock under `npm run dev:mock` or outside Tauri, so every
 screen can be developed in a normal browser and tested in jsdom.
 
-Three `Backend` methods use Tauri plugins and APIs directly instead of a command:
+Five `Backend` methods use Tauri plugins and APIs directly instead of a command:
 
-| Method | Implemented with | Used for |
-|---|---|---|
-| `chooseSaveFile(defaultPath)` | `save` from `@tauri-apps/plugin-dialog`, CSV filter | the CSV path on the Rename screen |
-| `openFile(path)` | `openPath` from `@tauri-apps/plugin-opener` | "Play" on the Review screen |
-| `onFileDrop(listener)` | `getCurrentWebview().onDragDropEvent` | dropping a folder on the Start screen |
+| Method | Implemented with | Permission in `src-tauri/capabilities/default.json` | Used for |
+|---|---|---|---|
+| `chooseFolder()` | `open` from `@tauri-apps/plugin-dialog`, folders only | `dialog:allow-open` | picking a folder on the Start screen and the Rename screen |
+| `chooseSaveFile(defaultPath)` | `save` from `@tauri-apps/plugin-dialog`, CSV filter | `dialog:allow-save` | the CSV path on the Rename screen |
+| `openUrl(url)` | `openUrl` from `@tauri-apps/plugin-opener` | `opener:allow-open-url`, scoped | credit and key links |
+| `openFile(path)` | `openPath` from `@tauri-apps/plugin-opener` | `opener:allow-open-path`, scoped | "Play" on the Review screen |
+| `onFileDrop(listener)` | `getCurrentWebview().onDragDropEvent` | none (`core:default`) | dropping a folder on the Start screen |
 
 The web view does not give the page the native path of a dropped file, so drops come from
-Tauri's drag-and-drop event (`dragDropEnabled` in `tauri.conf.json`). `openFile` needs the
-`opener:allow-open-path` permission in `src-tauri/capabilities/default.json`; its scope lists
-only video extensions (`**/*.mkv`, `**/*.mp4` and the others the scan accepts, in lower and
-upper case), so the UI can open a video in the default player but cannot launch programs.
+Tauri's drag-and-drop event (`dragDropEnabled` in `tauri.conf.json`).
+
+Both opener permissions are scoped, so the window cannot use them to launch programs or open
+arbitrary sites:
+
+- `opener:allow-open-url` lists the sites the window links to: TVmaze, TMDb, SubDL, LRCLIB,
+  Creative Commons (the TVmaze data license), whisper.cpp, FFmpeg, Tauri and React, each as its
+  bare address and as `<address>/*`. The plugin matches these as glob patterns against the whole
+  URL, so `https://www.tvmaze.com/*` does not match `https://www.tvmaze.com.example.org`.
+- `opener:allow-open-path` lists `**/*.<ext>` for every extension the scan accepts
+  (`mi_media::VIDEO_EXTENSIONS`). Tauri matches file scopes without regard to letter case, so
+  `Title_t01.MKV` is covered. `plugins.opener.requireLiteralLeadingDot` is `false` in
+  `tauri.conf.json`, so a video inside a folder whose name starts with a dot can be played too.
+
+Two Rust tests in `src-tauri/src/commands.rs` keep these lists complete: every `https://` link in
+the UI sources and in `mi_sources::attributions()` must be allowed, and every scanned extension
+must be playable.
 
 In the browser, the mock reads simulation options from the page URL, which helps when checking
 screens by hand: `stepMs` and `downloadStepMs` (delay between simulated steps, ms), `model=ready`
@@ -157,11 +172,15 @@ screen (`ui/src/screens/`). State that outlives a screen lives in React context 
 
 | Provider | Holds |
 |---|---|
-| `identify.tsx` | the Identify flow's step (Start, Confirm show, Identifying, Review, Rename), the scan, the job folded from `job-event`s (`job.ts`), and the user's review choices |
+| `identify.tsx` | the Identify flow's step (Start, Confirm show, Identifying, Review, Rename), the scan, the job folded from `job-event`s (`job.ts`), the user's review choices, and the result of saving them |
 | `updates.tsx` | the update dialog, download progress and the "Update downloaded" banner |
 | `settings.tsx` | the settings, saved on every change |
 
-Leaving the flow for History or Settings keeps the job running and the review choices intact.
+Leaving the flow for History or Settings keeps the job running, the review choices and the
+result of a save intact, so returning shows the same screen. While a job runs, Review offers
+"Show progress" and "Cancel identifying". When the flow moves to another step, focus moves to the
+new screen's heading (Review focuses its file list instead), so keyboard and screen-reader users
+are not left on a button that is gone.
 Job events that arrive before `startIdentification` returns the job id are buffered and applied
 once the id is known, so the first events of a fast job are never lost. Pure logic (review
 choices and counts in `lib/review.ts`, the rename preview in `lib/plan.ts`, formatting, paths,
@@ -169,14 +188,25 @@ platform conventions) lives in `ui/src/lib/` and is tested without rendering.
 
 Review choices become `ReviewDecision`s only when the rename plan is requested: a confident
 suggestion starts approved, a "Check" suggestion starts pending, and an extra starts as "Not an
-episode". Pending files are left untouched by the plan, as are the play-all and extras.
+episode". Picking another episode in the dropdown makes the file pending until the user presses
+Approve, and an approval can be taken back with "Check again", so a slip in the dropdown (on
+Windows the arrow keys change a closed list) never renames a file. Pending files are left
+untouched by the plan, as are the play-all and extras.
 
 The update flow asks before downloading and never interrupts identification: an update announced
 while a job runs is shown when the job ends, and "Relaunch now" is disabled while a job runs.
 While an update downloads, "Hide" closes the dialog and lets the download finish, and "Cancel"
-stops it (`cancel_update_download`).
+stops it (`cancel_update_download`). "Check now" during a hidden download shows its progress
+again rather than offering the update a second time, and a hidden download that fails is
+reported in the banner instead of a dialog over the user's work.
 Dialog buttons follow the platform: the default button is last on macOS and first on Windows
-(`lib/platform.ts`, from the web view's user agent). Light and dark follow the system through
+(`lib/platform.ts`, from the web view's user agent). "Back" is not a dialog button but wizard
+navigation, so it stays at the left edge on both.
+
+The credits for show and episode data (TVmaze with its CC BY-SA 4.0 license, and TMDb's notice
+and logo when its numbering is used) are shown on Confirm show, Review and Rename, and all credits
+on About. Their texts and links come from the app (`attributions` command, built from
+`mi_sources::attribution`), so the window cannot drift from the source of truth. Light and dark follow the system through
 `prefers-color-scheme`; colors are tokens on `:root` in `ui/src/styles.css`.
 
 The speech model download starts by itself the first time the Start screen opens without the

@@ -49,6 +49,7 @@ Direct dependencies and their licenses. Each module records its own dependencies
 | zip (deflate through flate2 and zlib-rs: MIT OR Apache-2.0, Zlib) | MIT | SubDL subtitle archives |
 | TVmaze data | CC BY-SA 4.0 | episode lists (credited in the app); recorded test fixtures |
 | TMDb data (user's own key) | TMDb API terms | optional episode numbering (notice shown in the app) |
+| TMDB logo (`ui/src/assets/tmdb-logo.svg`, from themoviedb.org/about/logos-attribution) | TMDB brand guidelines (supplied for attribution) | the attribution TMDb's API terms require |
 | SubDL subtitles (user's own key) | SubDL terms; subtitle rights belong to their authors | reference text, cached locally |
 | LRCLIB lyrics | rights belong to their holders | reference text, cached locally; test fixtures keep two-line excerpts |
 

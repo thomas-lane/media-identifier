@@ -84,7 +84,7 @@ export function IdentifyingScreen() {
           </tbody>
         </table>
       )}
-      <div className="row-between">
+      <div className="row-between sticky-foot">
         <span className="muted small">
           {job?.phase === "running" && finished > 0 ? "You can start reviewing finished files now." : ""}
         </span>

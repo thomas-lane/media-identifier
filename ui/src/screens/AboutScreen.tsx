@@ -1,38 +1,22 @@
 // About: version, license, and credits for the data sources and bundled software. TVmaze's
-// CC BY-SA 4.0 license and TMDb's terms require a visible credit.
+// CC BY-SA 4.0 license (credit with links) and TMDb's terms (notice and logo) require a visible
+// credit; the texts come from the app (`attributions`).
 
 import { useEffect, useState } from "react";
 
 import { useBackend } from "../api";
+import { Credit, useAttributions } from "../components/Credits";
 import { AppIcon } from "../components/common";
+import type { ProviderId } from "../types/generated";
 
-interface Credit {
+interface SoftwareCredit {
   name: string;
   url: string;
   text: string;
 }
 
-export const CREDITS: Credit[] = [
-  {
-    name: "TVmaze",
-    url: "https://www.tvmaze.com",
-    text: "Show and episode information from TVmaze, licensed under CC BY-SA 4.0.",
-  },
-  {
-    name: "TMDb",
-    url: "https://www.themoviedb.org",
-    text: "When you add a TMDb key: this product uses the TMDB API but is not endorsed or certified by TMDB.",
-  },
-  {
-    name: "SubDL",
-    url: "https://subdl.com",
-    text: "Subtitles from SubDL, used with your own API key.",
-  },
-  {
-    name: "LRCLIB",
-    url: "https://lrclib.net",
-    text: "Song lyrics from LRCLIB.",
-  },
+/** Software built into the app. The online sources' credits come from the app itself. */
+export const SOFTWARE: SoftwareCredit[] = [
   {
     name: "whisper.cpp",
     url: "https://github.com/ggml-org/whisper.cpp",
@@ -46,12 +30,25 @@ export const CREDITS: Credit[] = [
   {
     name: "Tauri",
     url: "https://tauri.app",
-    text: "Built with Tauri (Apache 2.0 or MIT License) and React (MIT License).",
+    text: "Built with Tauri (Apache 2.0 or MIT License).",
+  },
+  {
+    name: "React",
+    url: "https://react.dev",
+    text: "User interface built with React (MIT License).",
   },
 ];
 
+const SOURCE_NAMES: Partial<Record<ProviderId, string>> = {
+  tvmaze: "TVmaze",
+  tmdb: "TMDb",
+  subdl: "SubDL",
+  lrclib: "LRCLIB",
+};
+
 export function AboutScreen() {
   const backend = useBackend();
+  const sources = useAttributions();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
@@ -75,8 +72,20 @@ export function AboutScreen() {
       </div>
       <div className="card stack">
         <h2>Credits</h2>
+        <h3 className="eyebrow">Data</h3>
         <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 8 }}>
-          {CREDITS.map((c) => (
+          {sources.map((a) => (
+            <li key={a.provider}>
+              <b>{SOURCE_NAMES[a.provider] ?? a.provider}</b>
+              <span className="muted"> · </span>
+              <Credit attribution={a} />
+              {a.provider === "tmdb" && <span className="muted small"> Used when you add a TMDb key.</span>}
+            </li>
+          ))}
+        </ul>
+        <h3 className="eyebrow">Software</h3>
+        <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 8 }}>
+          {SOFTWARE.map((c) => (
             <li key={c.name}>
               <button type="button" className="btn link" onClick={() => void backend.openUrl(c.url)}>
                 {c.name}
@@ -85,6 +94,10 @@ export function AboutScreen() {
             </li>
           ))}
         </ul>
+        <p className="muted small" style={{ margin: 0 }}>
+          The license texts and copyright notices of all included software are installed with the app, in the
+          licenses folder.
+        </p>
       </div>
     </section>
   );

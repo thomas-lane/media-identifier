@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import { useBackend } from "../api";
+import { EpisodeDataCredit } from "../components/Credits";
 import { ButtonRow, Pill, ProgressBar, Segmented, scoreTone } from "../components/common";
 import { formatDuration, formatEpisodeCode, formatPercent, plural } from "../lib/format";
 import { baseName, joinPath } from "../lib/paths";
@@ -25,7 +26,7 @@ import { fileProgress } from "../state/job";
 import type { Candidate, Episode, EvidenceNote, FileId, FileMatch, QuotePart } from "../types/generated";
 
 export function ReviewScreen() {
-  const { state, dispatch, fileInfo } = useIdentify();
+  const { state, dispatch, fileInfo, cancel } = useIdentify();
   const { job, reviews, request } = state;
   const [filter, setFilter] = useState<ReviewFilter>("all");
   const listRef = useRef<HTMLDivElement>(null);
@@ -43,7 +44,9 @@ export function ReviewScreen() {
     [order, job, reviews],
   );
   const counts = countCategories([...categories.values()]);
-  const visible = order.filter((id) => matchesFilter(categories.get(id) ?? "waiting", filter));
+  // The selected file stays listed while selected even when a change moves it out of the filter
+  // (picking another episode makes it a file to check), so its evidence stays in view.
+  const visible = order.filter((id) => matchesFilter(categories.get(id) ?? "waiting", filter) || id === state.selected);
   const selected = state.selected && visible.includes(state.selected) ? state.selected : (visible[0] ?? null);
 
   useEffect(() => {
@@ -104,10 +107,19 @@ export function ReviewScreen() {
         <Segmented label="Show" options={filterOptions} value={filter} onChange={setFilter} />
       </div>
       {running && (
-        <p className="alert warn small" role="status">
-          Still identifying: {progress.done} of {progress.total} files finished. New results
-          appear here as they finish.
-        </p>
+        <div className="alert warn small row-between" role="status">
+          <span>
+            Still identifying: {progress.done} of {progress.total} files finished. New results appear here as they finish.
+          </span>
+          <span className="row" style={{ gap: 6, flex: "none" }}>
+            <button type="button" className="btn small" onClick={() => dispatch({ type: "go", step: "identifying" })}>
+              Show progress
+            </button>
+            <button type="button" className="btn small" onClick={() => void cancel()}>
+              Cancel identifying
+            </button>
+          </span>
+        </div>
       )}
       <div className="review">
         <div className="review-list">
@@ -169,6 +181,7 @@ export function ReviewScreen() {
           {counts.approved} approved · {counts.check} to check · {plural(counts.extra, "extra")}
           {counts.skipped > 0 ? ` · ${counts.skipped} skipped` : ""}
         </span>
+        <EpisodeDataCredit tmdb={job.episodes.some((e) => e.showRef.provider === "tmdb")} />
         <ButtonRow
           others={[]}
           primary={
@@ -312,6 +325,7 @@ function EvidencePanel({
 }) {
   const backend = useBackend();
   const { fileInfo } = useIdentify();
+  const [playError, setPlayError] = useState<string | null>(null);
   const info = fileInfo(fileId);
   const ids = useId();
   const path = info?.path ?? joinPath(folder, fileId);
@@ -326,10 +340,24 @@ function EvidencePanel({
         <div className="mono">{baseName(fileId)}</div>
         {meta.length > 0 && <div className="muted small">{meta.join(" · ")}</div>}
       </div>
-      <button type="button" className="btn small" onClick={() => void backend.openFile(path).catch(() => {})}>
+      <button
+        type="button"
+        className="btn small"
+        onClick={() => {
+          setPlayError(null);
+          backend
+            .openFile(path)
+            .catch(() => setPlayError(`Couldn't open ${baseName(fileId)}. It may have been moved or renamed, or no app plays this kind of file.`));
+        }}
+      >
         ▶ Play
       </button>
     </div>
+  );
+  const playProblem = playError && (
+    <p role="alert" className="small" style={{ color: "var(--bad)", margin: 0 }}>
+      {playError}
+    </p>
   );
 
   if (match.suggestion.kind === "playAll" || !review) {
@@ -337,6 +365,7 @@ function EvidencePanel({
       <div className="card evidence" aria-label="Evidence">
         <div className="evidence-body">
           {header}
+          {playProblem}
           <p style={{ margin: 0 }}>
             This is the play-all title: one long title containing the episodes in disc order. It is used to work out the
             order of the other files and is left as it is.
@@ -354,12 +383,15 @@ function EvidencePanel({
     review.choice.kind === "episode" ? `ep:${episodeKeyId(review.choice.episode)}` : review.choice.kind === "skip" ? "skip" : "extra";
   const shared = sharedEpisodeWith(fileId, reviews);
 
+  // Choosing another episode makes the file one to check: it is renamed only after Approve, so
+  // a slip in the dropdown (arrow keys change a closed list on Windows) never renames a file.
+  // "Not an episode" and "Skip" leave the file where it is, so they take effect at once.
   const setChoice = (v: string) => {
     if (v === "extra") onChange({ choice: { kind: "notAnEpisode" }, approved: true });
     else if (v === "skip") onChange({ choice: { kind: "skip" }, approved: true });
     else {
       const key = parseEpisodeKeyId(v.slice(3));
-      if (key) onChange({ choice: { kind: "episode", episode: key }, approved: true });
+      if (key) onChange({ choice: { kind: "episode", episode: key }, approved: false });
     }
   };
 
@@ -371,6 +403,7 @@ function EvidencePanel({
     <div className="card evidence" aria-label="Evidence">
       <div className="evidence-body">
         {header}
+        {playProblem}
         <div>
           <label className="eyebrow" htmlFor={`${ids}-pick`} style={{ display: "block" }}>
             Suggested
@@ -443,6 +476,13 @@ function EvidencePanel({
       {evidence?.playAllPosition && showingChosen && <PlayAllStrip position={evidence.playAllPosition} />}
       </div>
       <ButtonRow
+        leading={
+          review.approved && review.choice.kind === "episode" ? (
+            <button type="button" className="btn" onClick={() => onChange({ ...review, approved: false })}>
+              Check again
+            </button>
+          ) : undefined
+        }
         others={[
           <button
             key="extra"

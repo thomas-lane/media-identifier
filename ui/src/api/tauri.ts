@@ -32,6 +32,7 @@ export const tauriBackend: Backend = {
   saveSettings: (settings) => invoke("save_settings", { settings }),
   setApiKey: (provider, key) => invoke("set_api_key", { provider, key }),
   sourceStatus: () => invoke("source_status"),
+  attributions: () => invoke("attributions"),
 
   modelStatus: (model) => invoke("model_status", { model }),
   downloadModel: (model) => invoke("download_model", { model }),

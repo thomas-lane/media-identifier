@@ -152,7 +152,8 @@ function ModelCard() {
           One-time download: speech model ({MODEL_NAMES[model]}, about {formatMegabytes(total)})
         </div>
         <div className="muted small">
-          Needed once to listen to your files on this computer. You can choose a smaller, faster model in Settings.
+          Needed once to listen to your files on this computer.
+          {model === "accurate" && " You can choose a smaller, faster model in Settings."}
         </div>
         {(s.kind === "downloading" || s.kind === "paused" || s.kind === "verifying") && (
           <div style={{ marginTop: 8 }}>

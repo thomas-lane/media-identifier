@@ -4,6 +4,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { toApiError, useBackend } from "../api";
+import { EpisodeDataCredit } from "../components/Credits";
 import { ButtonRow } from "../components/common";
 import { plural } from "../lib/format";
 import { baseName, joinPath } from "../lib/paths";
@@ -287,6 +288,7 @@ export function RenameScreen() {
           </ul>
         </div>
       )}
+      <EpisodeDataCredit tmdb={job.episodes.some((e) => e.showRef.provider === "tmdb")} />
       {mode !== "exportList" && (
         <label className="check">
           <input type="checkbox" checked={subtitles} onChange={(e) => setSubtitles(e.target.checked)} />

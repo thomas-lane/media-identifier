@@ -1,7 +1,7 @@
 // App shell: the sidebar (Identify, History, Settings, About), the update banner and dialog,
 // and the Identify flow's current step.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { UpdateBanner, UpdateDialog } from "./components/UpdateViews";
 import { usePlatform } from "./components/common";
@@ -109,6 +109,23 @@ function Shell() {
 
 function IdentifyStep() {
   const { state } = useIdentify();
+  // When the step changes, focus moves to the new screen's heading so keyboard and
+  // screen-reader users land on it (the button they pressed is gone). Review focuses its file
+  // list instead, where its arrow keys work.
+  const step = state.step;
+  const firstStep = useRef(true);
+  useEffect(() => {
+    if (firstStep.current) {
+      firstStep.current = false;
+      return;
+    }
+    if (step === "review") return;
+    const heading = document.querySelector<HTMLElement>(".shell-main h1");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus();
+    }
+  }, [step]);
   switch (state.step) {
     case "start":
       return <StartScreen />;

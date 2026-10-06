@@ -37,6 +37,7 @@ pub fn run() {
             commands::save_settings,
             commands::set_api_key,
             commands::source_status,
+            commands::attributions,
             commands::model_status,
             commands::download_model,
             commands::pause_model_download,

@@ -4,6 +4,7 @@
 
 import type {
   ApiKeyProvider,
+  Attribution,
   HistoryEntry,
   HistoryId,
   JobEvent,
@@ -49,6 +50,8 @@ export interface Backend {
   setApiKey(provider: ApiKeyProvider, key: string | null): Promise<void>;
   /** Status of each online source. */
   sourceStatus(): Promise<SourceStatus[]>;
+  /** The credits each online source requires, with links and licenses. */
+  attributions(): Promise<Attribution[]>;
 
   /** Download state of a speech model. */
   modelStatus(model: SpeechModel): Promise<ModelStatus>;

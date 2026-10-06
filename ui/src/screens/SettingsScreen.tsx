@@ -170,7 +170,8 @@ function SourcesCard() {
         <SourceRow key={s.provider} source={s} onChanged={load} />
       ))}
       <div className="muted small">
-        Only show names and episode numbers are sent online. Your video and audio stay on this computer.
+        Only show and episode details (names, numbers, titles and ids) and your keys are sent online. Your video and
+        audio stay on this computer.
       </div>
     </div>
   );
@@ -205,7 +206,7 @@ function SourceRow({ source, onChanged }: { source: SourceStatus; onChanged: () 
       status = <Pill tone="ok">{provider ? "Ready" : "Ready, no account needed"}</Pill>;
       break;
     case "needsKey":
-      status = null;
+      status = <Pill tone="gray">Not set up</Pill>;
       break;
     case "keyRejected":
       status = <Pill tone="bad">Key not accepted</Pill>;
@@ -356,6 +357,9 @@ function UpdatesCard({
         {result?.kind === "failed" && <span style={{ color: "var(--bad)" }}>Couldn't check for updates.</span>}
         {result?.kind === "available" && updates.readyVersion && (
           <span>Version {updates.readyVersion} is downloaded and installs when you relaunch.</span>
+        )}
+        {result?.kind === "available" && !updates.readyVersion && updates.downloadingVersion && (
+          <span>Version {updates.downloadingVersion} is downloading.</span>
         )}
       </div>
     </div>

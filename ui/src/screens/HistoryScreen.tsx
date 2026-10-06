@@ -1,6 +1,6 @@
 // History: every rename or copy, newest first, each with Undo.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { toApiError, useBackend } from "../api";
 import { ButtonRow, Pill } from "../components/common";
@@ -65,6 +65,17 @@ function HistoryCard({ entry, onChanged }: { entry: HistoryEntry; onChanged: () 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UndoOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const questionId = useId();
+  // Focus follows the question: onto its default button when it opens, back to "Undo…" when it
+  // is cancelled, so keyboard and screen-reader users are never left on the page body.
+  const wasConfirming = useRef(false);
+  useEffect(() => {
+    if (confirming) confirmButton.current?.focus();
+    else if (wasConfirming.current) undoButton.current?.focus();
+    wasConfirming.current = confirming;
+  }, [confirming]);
   const undoable = entry.mode !== "exportList" && entry.undoneAtMs === null;
   const count = entry.items.length;
   const question =
@@ -97,14 +108,14 @@ function HistoryCard({ entry, onChanged }: { entry: HistoryEntry; onChanged: () 
         </div>
         {entry.undoneAtMs !== null && <Pill tone="gray">Undone {formatWhen(entry.undoneAtMs)}</Pill>}
         {undoable && !confirming && (
-          <button type="button" className="btn small" onClick={() => setConfirming(true)}>
+          <button ref={undoButton} type="button" className="btn small" onClick={() => setConfirming(true)}>
             Undo…
           </button>
         )}
       </div>
       {confirming && (
-        <div className="alert warn row-between">
-          <span>{question}</span>
+        <div className="alert warn row-between" role="alertdialog" aria-labelledby={questionId}>
+          <span id={questionId}>{question}</span>
           <ButtonRow
             others={[
               <button key="cancel" type="button" className="btn small" onClick={() => setConfirming(false)} disabled={busy}>
@@ -112,7 +123,7 @@ function HistoryCard({ entry, onChanged }: { entry: HistoryEntry; onChanged: () 
               </button>,
             ]}
             primary={
-              <button type="button" className="btn small primary" onClick={() => void undo()} disabled={busy} data-autofocus>
+              <button ref={confirmButton} type="button" className="btn small primary" onClick={() => void undo()} disabled={busy}>
                 {entry.mode === "copyToFolder" ? "Delete copies" : "Undo rename"}
               </button>
             }

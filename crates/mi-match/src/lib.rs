@@ -18,8 +18,6 @@
 //!
 //! The crate does no I/O: audio arrives as PCM samples and text as strings. How and why it works
 //! is explained in `docs/identification.md`.
-//!
-//! Owner: match module (see `docs/architecture.md`).
 
 pub mod align;
 pub mod assign;

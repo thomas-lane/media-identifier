@@ -221,8 +221,8 @@ Downloads come from `https://dl.subdl.com` without the key: SubDL counts anonymo
 address (300 a day), and authenticated downloads exist only on paid plans. A download link from
 the search results must be a path on that host or a full `https://dl.subdl.com/...` address;
 anything else (another host, plain HTTP, or a path that would change the host, such as
-`@other.example/x`) is refused, so search results can never make the app contact another server. A free key allows 2,000
-searches a day. A season pack costs one download for a whole season, which is why packs come first.
+`@other.example/x`) is refused, so search results can never make the app contact another server.
+A free key allows 2,000 searches a day. A season pack costs one download for a whole season, which is why packs come first.
 
 Episodes in DVD order are looked up under their aired numbers (matched through the episode ids of
 the aired list) and reported under their DVD numbers, so a subtitle for broadcast episode 11 is

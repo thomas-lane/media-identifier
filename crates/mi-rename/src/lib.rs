@@ -4,11 +4,10 @@
 //! without touching the disk (the Rename screen shows it as the preview), and [`apply_plan`]
 //! carries out a conflict-free plan. Play-all titles and extras are never in a plan's items, so
 //! they stay where they are (`mi-core` rebuilds every plan from the job's record before applying
-//! it, so a plan sent by the window cannot add them). Nothing is ever overwritten: every move and copy uses an operation
-//! that fails when the target exists. Every operation is recorded in the History [`Journal`]
-//! before it happens and marked done after, so History can undo it even after a crash.
-//!
-//! Owner: release module (see `docs/architecture.md`).
+//! it, so a plan sent by the window cannot add them). Nothing is ever overwritten: every move
+//! and copy uses an operation that fails when the target exists. Every operation is recorded in the History [`Journal`]
+//! before it happens and marked done after, so History can undo it even after a crash. How saving
+//! works is described in `docs/saving.md`.
 
 pub mod apply;
 mod fsops;

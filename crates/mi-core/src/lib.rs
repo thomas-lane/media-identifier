@@ -5,8 +5,6 @@
 //! list, reference text, disc order, listening and matching, emitting [`mi_types::JobEvent`]s
 //! through an [`EventSink`]. The Tauri app is a thin layer over it. Every service sits behind a
 //! trait in [`services`], so tests drive whole jobs with scripted media, catalog and speech.
-//!
-//! Owner: integrator (see `docs/architecture.md`).
 
 pub mod engine;
 pub mod error;

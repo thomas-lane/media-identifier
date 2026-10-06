@@ -17,15 +17,19 @@ the renames. Audio and video never leave your computer.
 
 <p align="center"><img src="docs/images/identification.svg" width="720" alt="How one file is identified: the words heard in the file are compared with each episode's subtitles, the file is located inside the play-all title, and the signals are combined into the best overall assignment."></p>
 
-**Download:** see [Releases](https://github.com/thomas-lane/media-identifier/releases) and the
-[install guide](docs/install.md) (the builds are unsigned, so the first launch needs one extra
-step).
+<p align="center"><img src="docs/images/review.png" width="720" alt="The Review screen: the files on the left with their suggested episodes and confidence, and on the right the evidence for the selected file: signal scores, the words heard next to the episode's lyrics, and its place in the play-all."></p>
+
+The Review screen, showing the app's built-in sample data.
+
+**Install:** no release has been published yet; the [install guide](docs/install.md) describes
+the builds (they are unsigned, so the first launch needs one extra step).
 
 ## Status
 
-Version 0.1.0 has not been released yet. Everything below was run on one Apple Silicon Mac
-(macOS); nothing has been built or run on Windows, which CI will check once the repository is
-on GitHub.
+Version 0.1.0 has not been released. The GitHub repository and its releases are private, so
+installed copies cannot check for updates. Everything below was run on one Apple Silicon Mac
+(macOS); nothing has been built or run on Windows, and CI and the release workflows have not run
+on GitHub yet.
 
 | Component | State |
 |---|---|
@@ -36,11 +40,12 @@ on GitHub.
 | Episode lists and reference text | TVmaze and LRCLIB called live; SubDL and TMDb tested only against hand-written responses (no key yet) |
 | Matching, disc order, confidence | Tested on simulated speech errors and synthetic audio; end-to-end results below |
 | Identification pipeline | Tested with scripted services, and end to end on the files below |
-| Rename, copy, CSV export, undo | Tested on temporary folders; Windows untested |
+| Rename, copy, CSV export, undo | Tested on temporary folders, including interrupted saves and journal write failures; Windows untested |
 | UI | All screens tested in jsdom against the mock backend; the release app starts and shows the Start screen; a full identification through the window has not been run |
 | macOS release bundle | `.app`, `.dmg` and the signed updater file built locally; unsigned (ad-hoc) |
 | Auto-update | Launch-time check fails quietly while releases are private; download and install untested until the repository is public |
-| CI and release workflows | Lint-clean; never run on GitHub |
+| CI and release workflows | Lint-clean; never run on GitHub (including the Windows static-runtime check and the notices check) |
+| Windows build | Static C/C++ runtime and the processor check are untested on Windows |
 
 End-to-end checks with the whole pipeline (command-line example, same engine as the app):
 

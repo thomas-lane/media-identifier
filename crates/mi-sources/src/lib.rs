@@ -12,10 +12,8 @@
 //! - [`text`]: turning subtitle and lyrics files into plain dialogue lines.
 //! - [`mod@attribution`]: the credits the UI shows.
 //!
-//! Only show names, provider ids and episode numbers are sent online; audio and video never
-//! leave the computer. Provider terms, limits and attribution are in `docs/sources.md`.
-//!
-//! Owner: sources module (see `docs/architecture.md`).
+//! Audio, video, transcripts and file paths never leave the computer; what each source receives
+//! is listed in `docs/sources.md`, with provider terms, limits and attribution.
 
 pub mod attribution;
 pub mod cache;

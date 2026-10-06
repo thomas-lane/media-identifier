@@ -1,7 +1,7 @@
 //! Reference text from local files: subtitle or lyrics files in a folder.
 //!
-//! Used by tests, by the integrator's check against real episodes, and by anyone who has
-//! subtitle files for a show already. Files are matched to episodes by an episode marker in the
+//! Used by tests, by the check against real episodes (`mi-core`'s `identify` example), and by
+//! anyone who has subtitle files for a show already. Files are matched to episodes by an episode marker in the
 //! file name (`S01E02`, `1x02`, `Season 1 Episode 2`, in the numbering of the episodes asked
 //! for), else by the episode title appearing in the file name as whole words. Nothing is cached,
 //! because the files may change and reading them is cheap.

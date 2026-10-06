@@ -4,8 +4,6 @@
 //! ffmpeg and ffprobe are separate executables (Tauri sidecars), resolved by [`Sidecars`].
 //! Everything here is synchronous and blocking; callers run it on blocking threads. Every
 //! long-running function takes a [`CancelFlag`] and kills its child process when cancelled.
-//!
-//! Owner: media module (see `docs/architecture.md`).
 
 pub mod audio;
 pub mod play_all;

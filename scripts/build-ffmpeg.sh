@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the minimal audio-only LGPL ffmpeg and ffprobe sidecars into src-tauri/binaries/.
-# Owner: release module. Background: docs/development.md, "ffmpeg sidecars".
+# Background: docs/development.md, "ffmpeg sidecars".
 #
 # Usage: scripts/build-ffmpeg.sh [--target <triple>]
 #            [--verify | --print-configure | --check-notice | --fetch-source]

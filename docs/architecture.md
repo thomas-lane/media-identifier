@@ -47,9 +47,11 @@ calls `Engine::start_job`, which runs `mi_core::pipeline::run` on the runtime. T
    play-all, and decide whether that order is trustworthy. Skipped without a play-all or with
    fewer than two files.
 6. **Listening** (`mi_transcribe`), file by file: read the file's embedded text subtitle stream
-   when it has one (`mi_media::extract_text_subtitles`), choose windows, decode them to 16 kHz mono
-   PCM, transcribe, filter invented text. Each file is then matched on its own and its result sent
-   (`Matched`), so Review can start before the other files are heard.
+   (`mi_media::extract_text_subtitles`) when it has a usable one (in the job's language or
+   untagged, with at least 20 words; see [identification](identification.md#what-is-compared)),
+   choose windows, decode them to 16 kHz mono PCM, transcribe, filter invented text. Each file is
+   then matched on its own and its result sent (`Matched`), so Review can start before the other
+   files are heard.
 7. **Matching** (`mi_match::match_with_outcome`): score every file against every episode, choose
    the best overall assignment, classify each file as Confident, Check or Extra. Files with a low
    margin (`mi_match::needs_more_listening`) get more windows transcribed, then the rest of the
@@ -210,8 +212,10 @@ navigation, so it stays at the left edge on both.
 The credits for show and episode data (TVmaze with its CC BY-SA 4.0 license, and TMDb's notice
 and logo when its numbering is used) are shown on Confirm show, Review and Rename, and all credits
 on About. Their texts and links come from the app (`attributions` command, built from
-`mi_sources::attribution`), so the window cannot drift from the source of truth. Light and dark follow the system through
-`prefers-color-scheme`; colors are tokens on `:root` in `ui/src/styles.css`.
+`mi_sources::attribution`), so the window cannot drift from the source of truth.
+
+Light and dark follow the system through `prefers-color-scheme`; colors are tokens on `:root` in
+`ui/src/styles.css`.
 
 The speech model download starts by itself the first time the Start screen opens without the
 model, because nothing can be identified without it; "Identify" stays disabled until it is ready.

@@ -57,15 +57,23 @@ pub fn hungarian(scores: &[Vec<f32>], no_episode_score: f32) -> Vec<Option<usize
 /// relative to their "no episode" level. Ties prefer assigning over skipping, and earlier
 /// episodes over later ones, so the result is deterministic.
 pub fn order_preserving(scores: &[Vec<f32>], skip_file_penalty: f32) -> Vec<Option<usize>> {
+    order_preserving_with(scores, &vec![-skip_file_penalty; scores.len()])
+}
+
+/// [`order_preserving`] with its own value for leaving each file unassigned: `unassigned[i]` is
+/// added to the total when file `i` gets no episode (a negative penalty, or what the file is
+/// worth outside the order, such as its best special episode).
+pub fn order_preserving_with(scores: &[Vec<f32>], unassigned: &[f32]) -> Vec<Option<usize>> {
     let files = scores.len();
     if files == 0 {
         return Vec::new();
     }
     let episodes = scores[0].len();
-    let skip = -f64::from(skip_file_penalty);
+    let skip_of = |i: usize| f64::from(unassigned[i]);
     // best[i][j]: best total for files i.. and episodes j..
     let mut best = vec![vec![0.0f64; episodes + 1]; files + 1];
     for i in (0..files).rev() {
+        let skip = skip_of(i);
         best[i][episodes] = best[i + 1][episodes] + skip;
         for j in (0..episodes).rev() {
             let s = f64::from(scores[i][j]);

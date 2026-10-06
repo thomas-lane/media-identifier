@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { baseName, dirName, folderFromDrop, joinPath, relativeParts } from "./paths";
+import { baseName, dirName, folderFromDrop, joinPath, relativeParts, seasonFromFolder } from "./paths";
 
 describe("paths", () => {
   it("handles macOS and Windows separators", () => {
@@ -24,5 +24,17 @@ describe("paths", () => {
     expect(folderFromDrop(["/Rips/DISC1/title_t00.mkv", "/Rips/DISC1/title_t01.mkv"])).toBe("/Rips/DISC1");
     expect(folderFromDrop(["C:\\Rips\\DISC1\\title_t00.MKV"])).toBe("C:\\Rips\\DISC1");
     expect(folderFromDrop([])).toBeNull();
+  });
+});
+
+describe("seasonFromFolder", () => {
+  it("reads the season from common disc folder names", () => {
+    expect(seasonFromFolder("/Rips/FRIENDS_S3_D2")).toBe(3);
+    expect(seasonFromFolder("/Rips/Friends S03 Disc 1")).toBe(3);
+    expect(seasonFromFolder("C:\\Rips\\Friends Season 2")).toBe(2);
+    expect(seasonFromFolder("/Rips/Show.S01D1")).toBe(1);
+    expect(seasonFromFolder("/Rips/SCHOOLHOUSE_ROCK_D1")).toBeNull();
+    expect(seasonFromFolder("/Rips/SHOWS1")).toBeNull();
+    expect(seasonFromFolder("/Rips/Specials S0")).toBeNull();
   });
 });

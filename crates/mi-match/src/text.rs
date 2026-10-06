@@ -377,6 +377,8 @@ pub struct TfIdfIndex {
     word_df: HashMap<u64, u32>,
     code_df: HashMap<u64, u32>,
     docs: Vec<IndexedDocument>,
+    /// Mean weight of a phrase of the reference texts themselves (see [`Query`] phrase weights).
+    typical_phrase_weight: f32,
 }
 
 /// A heard text prepared once and compared with every document of a [`TfIdfIndex`].
@@ -387,6 +389,17 @@ pub struct Query {
     word_vec: SparseVec,
     code_vec: SparseVec,
     phrases: Vec<Phrase>,
+}
+
+impl Query {
+    /// Mean weight of the query's phrases: how specific, on average, its words are to single
+    /// episodes.
+    fn mean_phrase_weight(&self) -> f32 {
+        if self.phrases.is_empty() {
+            return 0.0;
+        }
+        self.phrases.iter().map(|p| p.weight).sum::<f32>() / self.phrases.len() as f32
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -416,7 +429,8 @@ pub struct DialogueScore {
     pub word_cosine: f32,
     /// Phonetic TF-IDF cosine.
     pub phonetic_cosine: f32,
-    /// Weighted share of heard phrases found in the reference.
+    /// Weighted share of heard phrases found in the reference, scaled down when the heard
+    /// phrases are much less specific than the reference texts' own (see [`TfIdfIndex::score`]).
     pub phrase_coverage: f32,
     /// The best-matching phrase, for the Review screen's quotes.
     pub best_overlap: Option<Overlap>,
@@ -428,6 +442,9 @@ pub struct DialogueScore {
 const PHRASE_FULL: f32 = 0.88;
 /// Character similarity that unrelated English phrases of equal length reach by chance.
 const PHRASE_FLOOR: f32 = 0.6;
+/// Heard phrases whose mean weight reaches this share of the references' typical phrase weight
+/// count fully toward phrase coverage; less specific ones count in proportion.
+const TYPICAL_SHARE: f32 = 0.5;
 /// Anchor positions tried per phrase.
 const MAX_ANCHORS: usize = 12;
 /// A cosine at or above this already indicates the same dialogue (sampled transcripts cover only
@@ -464,6 +481,20 @@ impl TfIdfIndex {
             code_counts.push(cc);
         }
         let n = prepared.len();
+        let (mut weight_sum, mut phrase_count) = (0.0f32, 0usize);
+        for p in &prepared {
+            for r in phrase_ranges(p.len()) {
+                weight_sum += r
+                    .map(|i| idf(n, index.word_df[&unigram(p.word_ids[i])]))
+                    .sum::<f32>();
+                phrase_count += 1;
+            }
+        }
+        index.typical_phrase_weight = if phrase_count > 0 {
+            weight_sum / phrase_count as f32
+        } else {
+            0.0
+        };
         for ((p, wc), cc) in prepared.into_iter().zip(word_counts).zip(code_counts) {
             let word_vec = weighted(&wc, |k| idf(n, index.word_df[&k]));
             let code_vec = weighted(&cc, |k| idf(n, index.code_df[&k]));
@@ -558,11 +589,24 @@ impl TfIdfIndex {
     }
 
     /// Dialogue similarity of a prepared query to document `document`.
+    ///
+    /// Phrase coverage is a share of the heard phrases, so text made only of lines every
+    /// episode shares (a theme song) would be fully covered by every episode. Such phrases weigh
+    /// little, because their words occur in every reference. So coverage is scaled by how the
+    /// heard phrases' mean weight compares with half the mean weight of the references' own
+    /// phrases: ordinary dialogue is unaffected, and shared lines alone stay far below the
+    /// identity floor.
     pub fn score(&self, query: &Query, document: usize) -> DialogueScore {
         let doc = &self.docs[document];
         let word_cosine = dot(&query.word_vec, &doc.word_vec);
         let phonetic_cosine = dot(&query.code_vec, &doc.code_vec);
-        let (phrase_coverage, best_overlap) = phrase_coverage(query, &doc.prepared);
+        let (coverage, best_overlap) = phrase_coverage(query, &doc.prepared);
+        let specificity = if self.typical_phrase_weight > 0.0 {
+            (query.mean_phrase_weight() / (TYPICAL_SHARE * self.typical_phrase_weight)).min(1.0)
+        } else {
+            1.0
+        };
+        let phrase_coverage = coverage * specificity;
         let calibrated = |c: f32| (c / COSINE_FULL).min(1.0);
         let similarity = (0.5 * phrase_coverage
             + 0.25 * calibrated(word_cosine)

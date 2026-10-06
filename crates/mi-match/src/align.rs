@@ -363,9 +363,12 @@ pub struct DiscOrder {
 /// Overlap of two located ranges, seconds, beyond which they count as overlapping: titles in a
 /// play-all touch, and alignment is accurate to a frame or two.
 const OVERLAP_TOLERANCE_S: f64 = 2.0;
-/// Two ranges that share more than this share of the shorter one hold the same audio: the files
-/// are duplicates of one title, which says nothing against the order.
+/// Two ranges that share more than this share of the shorter one hold the same audio.
 const DUPLICATE_SHARE: f64 = 0.5;
+/// Two ranges that hold the same audio are duplicates of one title only when the shorter is at
+/// least this share of the longer; a much shorter file inside a longer range is part of it (a
+/// theme song or recap inside an episode), not the same title.
+const DUPLICATE_LENGTH_SHARE: f64 = 0.8;
 /// Distance from a chapter start, seconds, within which a file counts as starting at it.
 const CHAPTER_TOLERANCE_S: f64 = 3.0;
 
@@ -373,9 +376,15 @@ const CHAPTER_TOLERANCE_S: f64 = 3.0;
 /// the chapter number of each position).
 ///
 /// Files whose alignment is missing or weaker than [`MIN_ALIGNMENT_SCORE`] are not located. When
-/// two files land on the same range (one holds more than half of the other), they are
-/// duplicates of one title: the stronger alignment keeps the position and the other file counts
-/// as not located. The order is trustworthy when all of the following hold:
+/// two files land on the same range (they share more than half of the shorter one):
+/// - if their lengths are similar (the shorter at least 80% of the longer), they are duplicates of
+///   one title: the stronger alignment keeps the position and the other file counts as not
+///   located;
+/// - otherwise the shorter file lies inside the longer one's title (a theme song or recap that
+///   also plays in an episode) and counts as not located, whatever its alignment score, because
+///   correlation strengths of a short and a long file are not comparable.
+///
+/// The order is trustworthy when all of the following hold:
 ///
 /// 1. at least two files, and at least half of the files given, are located;
 /// 2. no two located ranges overlap by more than 2 seconds (beyond duplicates);
@@ -397,19 +406,29 @@ pub fn derive_disc_order(
     let mut kept: Vec<(FileId, Alignment)> = Vec::new();
     let mut overlapping = false;
     for (id, a) in located {
-        let mut duplicate = false;
-        for (_, k) in &kept {
+        let mut dropped = false;
+        let mut contained: Vec<usize> = Vec::new();
+        for (i, (_, k)) in kept.iter().enumerate() {
             let shared =
                 (a.offset_s + a.length_s).min(k.offset_s + k.length_s) - a.offset_s.max(k.offset_s);
-            if shared > OVERLAP_TOLERANCE_S {
-                if shared > DUPLICATE_SHARE * a.length_s.min(k.length_s) {
-                    duplicate = true;
-                } else {
-                    overlapping = true;
-                }
+            if shared <= OVERLAP_TOLERANCE_S {
+                continue;
+            }
+            let (short, long) = (a.length_s.min(k.length_s), a.length_s.max(k.length_s));
+            if shared <= DUPLICATE_SHARE * short {
+                overlapping = true;
+            } else if short >= DUPLICATE_LENGTH_SHARE * long || a.length_s < k.length_s {
+                // A duplicate weaker than the one kept, or a short file inside a kept title.
+                dropped = true;
+            } else {
+                // The kept file is a short file inside this one's title.
+                contained.push(i);
             }
         }
-        if !duplicate {
+        if !dropped {
+            for i in contained.into_iter().rev() {
+                kept.remove(i);
+            }
             kept.push((id, a));
         }
     }
@@ -717,6 +736,29 @@ mod tests {
         assert!(order.trustworthy, "{order:?}");
         let names: Vec<&str> = order.positions.iter().map(|(f, _)| f.0.as_str()).collect();
         assert_eq!(names, ["a", "b"]);
+    }
+
+    #[test]
+    fn a_short_file_inside_an_episode_never_takes_its_place() {
+        // A 20-second theme extra matches the theme at the start of the first episode better
+        // than the episode files themselves match.
+        for theme_first in [true, false] {
+            let mut alignments = vec![
+                (id("ep1"), al(0.0, 60.0, 0.65)),
+                (id("ep2"), al(60.0, 60.0, 0.7)),
+                (id("ep3"), al(120.0, 60.0, 0.68)),
+            ];
+            let theme = (id("theme"), al(0.0, 20.0, 1.0));
+            if theme_first {
+                alignments.insert(0, theme);
+            } else {
+                alignments.push(theme);
+            }
+            let order = derive_disc_order(&alignments, &chapters(&[0.0, 60.0, 120.0], 180.0));
+            assert!(order.trustworthy, "{order:?}");
+            let names: Vec<&str> = order.positions.iter().map(|(f, _)| f.0.as_str()).collect();
+            assert_eq!(names, ["ep1", "ep2", "ep3"]);
+        }
     }
 
     #[test]

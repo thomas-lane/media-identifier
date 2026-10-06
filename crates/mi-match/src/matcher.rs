@@ -9,8 +9,13 @@
 //!    the anchors' episode order, the play-all is shuffled and ignored.
 //! 3. **Disc order signal.** For each located file, episodes that fit between the neighbouring
 //!    anchors score well, and the episode that continues the anchors' sequence scores best.
+//!    Specials (season 0) take no part in the order, because episode lists sort them before
+//!    season 1 whatever their place on the disc.
 //! 4. **Assignment.** Located files are assigned by order-preserving dynamic programming, the
-//!    rest by Hungarian assignment with "no episode" options.
+//!    rest (and located files the order leaves out) by Hungarian assignment over the episodes
+//!    still free, with "no episode" options. Files with something heard are assigned before
+//!    files with nothing heard, so a silent bonus feature cannot take an episode from a file
+//!    that sounds like it.
 //! 5. **Confidence.** Each file's margin over its runner-up gives Confident, Check or Extra.
 
 use mi_types::{
@@ -19,7 +24,7 @@ use mi_types::{
 };
 
 use crate::align::{DiscOrder, DiscOrderProblem};
-use crate::assign::{hungarian, order_preserving};
+use crate::assign::{hungarian, order_preserving_with};
 use crate::confidence::classify;
 use crate::duration::duration_fit;
 use crate::quote::{marked_quote, overlap_quotes};
@@ -201,12 +206,35 @@ pub fn match_with_outcome(
     let n_eps = input.episodes.len();
 
     let mut assigned: Vec<Option<usize>> = vec![None; input.files.len()];
+    let special = |e: usize| input.episodes[e].episode.key.season == 0;
     if let Some(order) = &eval.located_in_order {
+        // Specials cannot be placed in order; a file is left out of the order when a special
+        // suits it better than any place in the sequence, and the free pass below assigns it.
         let rows: Vec<Vec<f32>> = order
             .iter()
-            .map(|&f| scores[f].iter().map(|s| s - no_ep).collect())
+            .map(|&f| {
+                (0..n_eps)
+                    .map(|e| {
+                        if special(e) {
+                            f32::NEG_INFINITY
+                        } else {
+                            scores[f][e] - no_ep
+                        }
+                    })
+                    .collect()
+            })
             .collect();
-        for (k, a) in order_preserving(&rows, config.skip_file_penalty)
+        let unassigned: Vec<f32> = order
+            .iter()
+            .map(|&f| {
+                let best_special = (0..n_eps)
+                    .filter(|&e| special(e))
+                    .map(|e| scores[f][e] - no_ep)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                best_special.max(-config.skip_file_penalty)
+            })
+            .collect();
+        for (k, a) in order_preserving_with(&rows, &unassigned)
             .into_iter()
             .enumerate()
         {
@@ -214,27 +242,27 @@ pub fn match_with_outcome(
         }
         let used: Vec<bool> = (0..n_eps).map(|e| assigned.contains(&Some(e))).collect();
         let rest: Vec<usize> = (0..input.files.len())
-            .filter(|f| !order.contains(f))
+            .filter(|&f| assigned[f].is_none())
             .collect();
-        let rows: Vec<Vec<f32>> = rest
-            .iter()
-            .map(|&f| {
-                (0..n_eps)
-                    .map(|e| {
-                        if used[e] {
-                            f32::NEG_INFINITY
-                        } else {
-                            scores[f][e]
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
-        for (k, a) in hungarian(&rows, no_ep).into_iter().enumerate() {
-            assigned[rest[k]] = a;
-        }
+        assign_free(
+            &rest,
+            scores,
+            used,
+            &eval.heard_something,
+            no_ep,
+            &mut assigned,
+        );
     } else {
-        assigned = hungarian(scores, no_ep);
+        let all: Vec<usize> = (0..input.files.len()).collect();
+        let used = vec![false; n_eps];
+        assign_free(
+            &all,
+            scores,
+            used,
+            &eval.heard_something,
+            no_ep,
+            &mut assigned,
+        );
     }
 
     let matches = input
@@ -296,6 +324,43 @@ pub fn match_with_outcome(
     })
 }
 
+/// Hungarian assignment of `files` to the episodes not `used`: first the files in which
+/// something was heard, then, over the episodes still free, the others. A file with nothing
+/// heard scores on length alone, which fits every episode of the right runtime equally, so
+/// assigning it together with the rest could take an episode from a file whose dialogue matches.
+fn assign_free(
+    files: &[usize],
+    scores: &[Vec<f32>],
+    mut used: Vec<bool>,
+    heard_something: &[bool],
+    no_ep: f32,
+    assigned: &mut [Option<usize>],
+) {
+    for heard in [true, false] {
+        let group: Vec<usize> = files
+            .iter()
+            .copied()
+            .filter(|&f| heard_something[f] == heard)
+            .collect();
+        let rows: Vec<Vec<f32>> = group
+            .iter()
+            .map(|&f| {
+                scores[f]
+                    .iter()
+                    .zip(&used)
+                    .map(|(&s, &u)| if u { f32::NEG_INFINITY } else { s })
+                    .collect()
+            })
+            .collect();
+        for (k, a) in hungarian(&rows, no_ep).into_iter().enumerate() {
+            assigned[group[k]] = a;
+            if let Some(e) = a {
+                used[e] = true;
+            }
+        }
+    }
+}
+
 /// Whether what was heard supports an episode by itself: dialogue at least at the identity floor,
 /// or the title clearly heard. A suggestion without such support rests on length and disc order
 /// alone, which place a file but cannot recognise it, so it is never `Confident`.
@@ -311,6 +376,8 @@ struct Evaluation {
     disc_order: DiscOrderUse,
     /// File indices in play-all order when the disc order is used.
     located_in_order: Option<Vec<usize>>,
+    /// Per file: whether any dialogue or title was measured in it.
+    heard_something: Vec<bool>,
 }
 
 /// What the dialogue signal of one cell was computed from, for the quotes.
@@ -412,15 +479,61 @@ fn longest_increasing(values: &[usize]) -> usize {
     tails.len()
 }
 
+/// Back-to-back titles in a play-all are at most this far apart, seconds.
+const TITLES_TOUCH_S: f64 = 3.0;
+
+/// The place of each located file among the disc's titles, in play-all order.
+///
+/// Normally the place is the file's rank among the located files. When chapters mark the titles
+/// (every located file starts a chapter, and files that follow each other without a gap are one
+/// chapter apart), a chapter skipped between two files is a title that was not ripped (MakeMKV
+/// drops titles shorter than its minimum length). It counts as a missing episode when the time
+/// it fills is at least half the median length of the located files, so a missing episode
+/// shifts the expected episodes after it, while a skipped short bumper does not.
+fn disc_slots(positions: &[&PlayAllPosition]) -> Vec<usize> {
+    let n = positions.len();
+    let by_rank: Vec<usize> = (0..n).collect();
+    let Some(chapters) = positions
+        .iter()
+        .map(|p| p.chapter)
+        .collect::<Option<Vec<u32>>>()
+    else {
+        return by_rank;
+    };
+    let gap = |w: usize| positions[w + 1].start_s - positions[w].end_s;
+    for w in 0..n.saturating_sub(1) {
+        let step = i64::from(chapters[w + 1]) - i64::from(chapters[w]);
+        if step < 1 || (gap(w) <= TITLES_TOUCH_S && step != 1) {
+            // Chapters do not mark titles (for example, several chapters per episode).
+            return by_rank;
+        }
+    }
+    let mut lengths: Vec<f64> = positions.iter().map(|p| p.end_s - p.start_s).collect();
+    lengths.sort_by(f64::total_cmp);
+    let median = lengths.get(n / 2).copied().unwrap_or(0.0);
+    let mut slots = Vec::with_capacity(n);
+    let mut slot = 0;
+    for w in 0..n {
+        if w > 0 {
+            let missing = (chapters[w] - chapters[w - 1] - 1) as usize;
+            let episode_sized = missing > 0 && gap(w - 1) / missing as f64 >= 0.5 * median;
+            slot += 1 + if episode_sized { missing } else { 0 };
+        }
+        slots.push(slot);
+    }
+    slots
+}
+
 /// Disc order signal for the file at play-all `rank` and episode `e`, from the anchors
-/// (`(rank, episode)`, sorted by rank) other than the file itself.
+/// (`(rank, episode)`, sorted by rank) other than the file itself. `slots[rank]` is the place of
+/// each located file along the disc's titles (see [`disc_slots`]).
 ///
 /// Episodes that cannot lie between the nearest anchors before and after the file score 0.
 /// Among those that can, the episode that continues an anchor's sequence (as many places after
-/// the earlier anchor's episode as the file is after that anchor along the play-all, or as many
+/// the earlier anchor's episode as the file is after that anchor along the disc, or as many
 /// before the later anchor's) scores 1.0 and the others 0.6. `None` when
 /// there are no anchors, because then the order says nothing about any particular episode.
-fn order_signal(rank: usize, e: usize, anchors: &[(usize, usize)]) -> Option<f32> {
+fn order_signal(rank: usize, e: usize, anchors: &[(usize, usize)], slots: &[usize]) -> Option<f32> {
     let others = anchors.iter().filter(|(r, _)| *r != rank);
     let prev = others
         .clone()
@@ -435,8 +548,8 @@ fn order_signal(rank: usize, e: usize, anchors: &[(usize, usize)]) -> Option<f32
     if !(after_prev && before_next) {
         return Some(0.0);
     }
-    let expected_from_prev = prev.map(|(pr, pe)| pe + (rank - pr));
-    let expected_from_next = next.and_then(|(nr, ne)| ne.checked_sub(nr - rank));
+    let expected_from_prev = prev.map(|(pr, pe)| pe + (slots[rank] - slots[*pr]));
+    let expected_from_next = next.and_then(|(nr, ne)| ne.checked_sub(slots[*nr] - slots[rank]));
     if expected_from_prev == Some(e) || expected_from_next == Some(e) {
         Some(1.0)
     } else {
@@ -537,8 +650,29 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
             .filter(|w| crate::normalize::is_content_word(w))
             .count();
         let enough = content_words >= config.min_heard_words;
+        let hooks: Vec<Option<(TitleHook, bool)>> = input
+            .episodes
+            .iter()
+            .map(|ep| {
+                let main_hook = find_title(&ep.episode.title, &for_titles).map(|h| (h, false));
+                let transcript_hook = transcript_for_titles
+                    .as_ref()
+                    .and_then(|(_, h)| find_title(&ep.episode.title, h))
+                    .map(|h| (h, true));
+                match (main_hook, transcript_hook) {
+                    (Some(a), Some(b)) => Some(if b.0.score > a.0.score { b } else { a }),
+                    (a, b) => a.or(b),
+                }
+            })
+            .collect();
+        // When too little was heard to measure dialogue, a title still counts if one was heard:
+        // then every episode gets the title hook, 0 for titles not heard, so hearing a title
+        // raises its episode above the others instead of only diluting its length fit.
+        let any_title = hooks
+            .iter()
+            .any(|h| h.as_ref().is_some_and(|(h, _)| h.score > 0.0));
         let mut row = Vec::with_capacity(input.episodes.len());
-        for (e, ep) in input.episodes.iter().enumerate() {
+        for ((e, ep), hook) in input.episodes.iter().enumerate().zip(hooks) {
             let detail = if !enough {
                 TextDetail::None
             } else if let Some(d) = dialogue_doc[e] {
@@ -553,19 +687,10 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
                 TextDetail::Summary(_, s) => Some(s.similarity),
                 TextDetail::None => None,
             };
-            let main_hook = find_title(&ep.episode.title, &for_titles).map(|h| (h, false));
-            let transcript_hook = transcript_for_titles
-                .as_ref()
-                .and_then(|(_, h)| find_title(&ep.episode.title, h))
-                .map(|h| (h, true));
-            let hook = match (main_hook, transcript_hook) {
-                (Some(a), Some(b)) => Some(if b.0.score > a.0.score { b } else { a }),
-                (a, b) => a.or(b),
-            };
             let hook_score = hook.as_ref().map_or(0.0, |(h, _)| h.score);
             let title_hook = if words == 0 && transcript_for_titles.is_none() {
                 None
-            } else if enough || hook_score > 0.0 {
+            } else if enough || any_title {
                 Some(hook_score)
             } else {
                 None
@@ -588,6 +713,20 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
         });
         work.push(row);
     }
+
+    let heard_something: Vec<bool> = work
+        .iter()
+        .map(|row| {
+            row.iter().any(|c| {
+                c.signals.dialogue.is_some() || c.signals.title_hook.is_some_and(|t| t > 0.0)
+            })
+        })
+        .collect();
+    let is_special: Vec<bool> = input
+        .episodes
+        .iter()
+        .map(|ep| ep.episode.key.season == 0)
+        .collect();
 
     let content_scores: Vec<Vec<f32>> = input
         .files
@@ -625,18 +764,28 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
             .collect();
         ranked.sort();
         let located: Vec<usize> = ranked.into_iter().map(|(_, f)| f).collect();
+        let located_positions: Vec<&PlayAllPosition> = located
+            .iter()
+            .filter_map(|&f| positions[f].as_ref())
+            .collect();
+        let slots = if located_positions.len() == located.len() {
+            disc_slots(&located_positions)
+        } else {
+            (0..located.len()).collect()
+        };
         disc_use = if !order.trustworthy {
             DiscOrderUse::Ignored(order.problem.unwrap_or(DiscOrderProblem::TooFewLocated))
         } else if located.len() < 2 {
             DiscOrderUse::Ignored(DiscOrderProblem::TooFewLocated)
         } else {
-            // Anchors: located files the content alone identifies confidently.
+            // Anchors: located files the content alone identifies confidently as a regular
+            // (not special) episode.
             let provisional = hungarian(&content_scores, config.no_episode_score);
             let anchors: Vec<(usize, usize)> = located
                 .iter()
                 .enumerate()
                 .filter_map(|(rank, &f)| {
-                    let e = provisional[f]?;
+                    let e = provisional[f].filter(|&e| !is_special[e])?;
                     let row = &content_scores[f];
                     let runner_up = row
                         .iter()
@@ -658,7 +807,11 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
             } else {
                 for (rank, &f) in located.iter().enumerate() {
                     for (e, cell) in work[f].iter_mut().enumerate() {
-                        cell.signals.disc_order = order_signal(rank, e, &anchors);
+                        cell.signals.disc_order = if is_special[e] {
+                            None
+                        } else {
+                            order_signal(rank, e, &anchors, &slots)
+                        };
                     }
                 }
                 located_in_order = Some(located);
@@ -677,11 +830,12 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
         for (e, ep) in input.episodes.iter().enumerate() {
             let cell = &work[f][e];
             // A file found inside a used play-all belongs to the disc's main sequence, which holds
-            // episodes, so weak dialogue does not scale its score down.
+            // episodes, so weak dialogue does not scale its score down for a regular episode. A
+            // special is outside that sequence, so the order says nothing for it.
             let in_play_all = located_in_order.as_ref().is_some_and(|l| l.contains(&f));
             let score = combine(
                 &cell.signals,
-                dialogue_doc[e].is_some() && !in_play_all,
+                dialogue_doc[e].is_some() && (!in_play_all || is_special[e]),
                 file.mostly_music,
                 config,
             );
@@ -789,6 +943,7 @@ fn evaluate(input: &MatchInput, config: &MatchConfig, cancel: &CancelFlag) -> Re
         scores,
         disc_order: disc_use,
         located_in_order,
+        heard_something,
     })
 }
 
@@ -861,25 +1016,81 @@ mod tests {
         // Anchors: rank 0 is episode 2, rank 3 is episode 6.
         let anchors = [(0, 2), (3, 6)];
         // Rank 1 continues the sequence from rank 0: episode 3.
-        assert_eq!(order_signal(1, 3, &anchors), Some(1.0));
+        assert_eq!(order_signal(1, 3, &anchors, &[0, 1, 2, 3]), Some(1.0));
         // Counting back from the anchor at rank 3, rank 1 would be episode 4.
-        assert_eq!(order_signal(1, 4, &anchors), Some(1.0));
+        assert_eq!(order_signal(1, 4, &anchors, &[0, 1, 2, 3]), Some(1.0));
         // Episode 5 fits between the anchors but continues neither sequence.
-        assert_eq!(order_signal(1, 5, &anchors), Some(0.6));
+        assert_eq!(order_signal(1, 5, &anchors, &[0, 1, 2, 3]), Some(0.6));
         // Rank 2 is one before the anchor at rank 3: episode 5.
-        assert_eq!(order_signal(2, 5, &anchors), Some(1.0));
+        assert_eq!(order_signal(2, 5, &anchors, &[0, 1, 2, 3]), Some(1.0));
         // Outside the anchors' range.
-        assert_eq!(order_signal(1, 1, &anchors), Some(0.0));
-        assert_eq!(order_signal(1, 7, &anchors), Some(0.0));
+        assert_eq!(order_signal(1, 1, &anchors, &[0, 1, 2, 3]), Some(0.0));
+        assert_eq!(order_signal(1, 7, &anchors, &[0, 1, 2, 3]), Some(0.0));
     }
 
     #[test]
     fn order_signal_ignores_the_file_itself_and_needs_anchors() {
-        assert_eq!(order_signal(0, 5, &[(0, 2)]), None);
-        assert_eq!(order_signal(0, 5, &[]), None);
+        let slots = [0, 1, 2];
+        assert_eq!(order_signal(0, 5, &[(0, 2)], &slots), None);
+        assert_eq!(order_signal(0, 5, &[], &slots), None);
         // An anchor judged against its neighbours.
-        assert_eq!(order_signal(1, 2, &[(0, 1), (1, 2), (2, 3)]), Some(1.0));
-        assert_eq!(order_signal(1, 5, &[(0, 1), (1, 5), (2, 3)]), Some(0.0));
+        assert_eq!(
+            order_signal(1, 2, &[(0, 1), (1, 2), (2, 3)], &slots),
+            Some(1.0)
+        );
+        assert_eq!(
+            order_signal(1, 5, &[(0, 1), (1, 5), (2, 3)], &slots),
+            Some(0.0)
+        );
+    }
+
+    fn at(chapter: Option<u32>, start_s: f64, end_s: f64) -> PlayAllPosition {
+        PlayAllPosition {
+            chapter,
+            start_s,
+            end_s,
+            order_index: 0,
+            alignment_score: 0.9,
+        }
+    }
+
+    #[test]
+    fn disc_slots_count_missing_titles_only_when_chapters_mark_titles() {
+        // Titles at chapters 0, 1, 3 and 4: chapter 2 (an episode-long gap) was not ripped.
+        let p = [
+            at(Some(0), 0.0, 600.0),
+            at(Some(1), 600.0, 1200.0),
+            at(Some(3), 1800.0, 2400.0),
+            at(Some(4), 2400.0, 3000.0),
+        ];
+        let refs: Vec<&PlayAllPosition> = p.iter().collect();
+        assert_eq!(disc_slots(&refs), [0, 1, 3, 4]);
+
+        // A short bumper between titles is not an episode.
+        let p = [at(Some(0), 0.0, 600.0), at(Some(2), 630.0, 1230.0)];
+        let refs: Vec<&PlayAllPosition> = p.iter().collect();
+        assert_eq!(disc_slots(&refs), [0, 1]);
+
+        // Several chapters per episode: chapters say nothing about titles.
+        let p = [
+            at(Some(0), 0.0, 600.0),
+            at(Some(5), 600.0, 1200.0),
+            at(Some(10), 1200.0, 1800.0),
+        ];
+        let refs: Vec<&PlayAllPosition> = p.iter().collect();
+        assert_eq!(disc_slots(&refs), [0, 1, 2]);
+
+        // No chapters.
+        let p = [at(None, 0.0, 600.0), at(None, 1200.0, 1800.0)];
+        let refs: Vec<&PlayAllPosition> = p.iter().collect();
+        assert_eq!(disc_slots(&refs), [0, 1]);
+    }
+
+    #[test]
+    fn order_signal_follows_the_slots() {
+        // Anchor at rank 0 is episode 0; rank 1 is two titles later on the disc.
+        assert_eq!(order_signal(1, 2, &[(0, 0)], &[0, 2]), Some(1.0));
+        assert_eq!(order_signal(1, 1, &[(0, 0)], &[0, 2]), Some(0.6));
     }
 
     fn signals(dialogue: Option<f32>, title: Option<f32>, duration: Option<f32>) -> Signals {

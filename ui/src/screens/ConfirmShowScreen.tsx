@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { toApiError, useBackend } from "../api";
 import { ButtonRow, Pill } from "../components/common";
 import { formatDuration, plural } from "../lib/format";
-import { baseName } from "../lib/paths";
+import { baseName, seasonFromFolder } from "../lib/paths";
 import { useIdentify } from "../state/identify";
 import { useModel } from "../state/model";
 import { useSettings } from "../state/settings";
@@ -37,7 +37,8 @@ export function ConfirmShowScreen() {
   const [searching, setSearching] = useState(Boolean(scan?.showGuess));
   const [searchError, setSearchError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const [season, setSeason] = useState<string>("all");
+  // The season the user picked; until then, the season in the folder's name when the show has it.
+  const [seasonChoice, setSeason] = useState<string | null>(null);
   const [ordering, setOrdering] = useState<EpisodeOrdering>("aired");
   const [language, setLanguage] = useState<string>(settings?.language ?? "en");
   const ids = useId();
@@ -81,6 +82,8 @@ export function ConfirmShowScreen() {
   const modelReady = model.status?.state.kind === "ready";
   const count = scan.candidateCount;
   const seasonCount = chosen?.show.seasonCount ?? 0;
+  const guessedSeason = seasonFromFolder(scan.folder);
+  const season = seasonChoice ?? (guessedSeason !== null && guessedSeason <= seasonCount ? String(guessedSeason) : "all");
 
   const identify = () => {
     if (!chosen) return;

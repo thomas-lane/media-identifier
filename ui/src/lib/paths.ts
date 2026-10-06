@@ -56,3 +56,17 @@ export function folderFromDrop(paths: string[]): string | null {
   if (!first) return null;
   return isVideoFile(first) ? dirName(first) || first : first;
 }
+
+/**
+ * The season number a disc folder's name gives, such as `FRIENDS_S3_D2`, `Friends S03 Disc 1` or
+ * `Season 2`; null when the name has none. The letter or word must stand apart from the
+ * surrounding letters, so `SHOWS1` gives nothing.
+ */
+export function seasonFromFolder(path: string): number | null {
+  const name = baseName(path);
+  const match = /(?:^|[^a-z0-9])(?:season[ ._-]*(\d{1,2})|s(\d{1,2}))(?=$|[^0-9])/i.exec(name);
+  const digits = match?.[1] ?? match?.[2];
+  if (!digits) return null;
+  const n = Number(digits);
+  return n > 0 ? n : null;
+}

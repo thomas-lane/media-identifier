@@ -241,6 +241,13 @@ impl<'a> Job<'a> {
         f(&mut record);
     }
 
+    /// Records each match as its file's current result and sends it.
+    fn publish_all(&self, matches: &[FileMatch]) {
+        for m in matches {
+            self.publish(m.clone());
+        }
+    }
+
     /// Records `m` as the file's current result and sends it.
     fn publish(&self, m: FileMatch) {
         self.update_record(|r| {
@@ -346,11 +353,7 @@ impl<'a> Job<'a> {
 
         // 3. Reference text.
         let texts = self.reference_texts(&episodes).await?;
-        let lyric_count = texts.iter().filter(|t| t.kind == TextKind::Lyrics).count();
-        let dialogue_count = texts.iter().filter(|t| t.kind != TextKind::Summary).count();
-        // A show whose reference texts are mostly lyrics is sung: voice activity detection would
-        // cut sung words, and music is expected rather than a sign of a bonus feature.
-        let show_is_musical = dialogue_count > 0 && lyric_count * 2 >= dialogue_count;
+        let show_is_musical = show_is_musical(&episodes, &texts);
         let episode_inputs = episode_inputs(&episodes, texts);
 
         // 4. Disc order.
@@ -464,13 +467,21 @@ impl<'a> Job<'a> {
         let mut matches = self
             .match_all(&items, &episode_inputs, &disc_order, &positions)
             .await?;
+        // Published now, so a job cancelled during further listening keeps the global
+        // assignment rather than each file's own interim match.
+        self.publish_all(&matches);
         for round in 0..rounds {
             let uncertain = needs_more_listening(&matches, &ctx.config.matching);
             let mut listened = false;
             for item in items.iter_mut().filter(|i| uncertain.contains(&i.file.id)) {
-                if item.failed {
+                // Embedded subtitles replace the transcript as dialogue, so hearing more of the
+                // file could change only the title hook, which the subtitles are searched for too.
+                if item.failed || item.embedded.is_some() {
                     continue;
                 }
+                // A file found to be mostly music is heard further without voice activity
+                // detection, which would cut sung words.
+                item.music_heavy |= mostly_music(&item.transcript);
                 let more = escalation_windows(
                     item.duration_s,
                     &item.transcript.windows,
@@ -510,6 +521,7 @@ impl<'a> Job<'a> {
             matches = self
                 .match_all(&items, &episode_inputs, &disc_order, &positions)
                 .await?;
+            self.publish_all(&matches);
         }
         for (item, m) in items.iter().zip(matches) {
             let best = m.candidates.first().map(|c| c.title.clone());
@@ -772,6 +784,19 @@ impl<'a> Job<'a> {
     }
 }
 
+/// Whether the show is sung: at least half of its episodes have lyrics as reference text. Voice
+/// activity detection would cut sung words, and music is expected rather than a sign of a bonus
+/// feature. Episodes are counted rather than texts, so one episode whose title matches a song
+/// does not make a whole show musical.
+fn show_is_musical(episodes: &[Episode], texts: &[ReferenceText]) -> bool {
+    let with_lyrics: std::collections::HashSet<_> = texts
+        .iter()
+        .filter(|t| t.kind == TextKind::Lyrics)
+        .map(|t| t.episode)
+        .collect();
+    !with_lyrics.is_empty() && with_lyrics.len() * 2 >= episodes.len()
+}
+
 /// True when most of what the model produced was marked as sound rather than speech (music
 /// notes, sound descriptions, no-speech segments).
 fn mostly_music(transcript: &Transcript) -> bool {
@@ -844,5 +869,54 @@ pub fn new_record(job_id: &JobId, request: &JobRequest, model: SpeechModel) -> J
         transcripts: HashMap::new(),
         saved: false,
         finished_at_ms: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mi_types::{EpisodeKey, EpisodeOrdering, ProviderId, ShowRef};
+
+    fn episode(number: u32) -> Episode {
+        Episode {
+            show_ref: ShowRef {
+                provider: ProviderId::Tvmaze,
+                id: "1".into(),
+            },
+            ordering: EpisodeOrdering::Aired,
+            key: EpisodeKey { season: 1, number },
+            title: format!("Episode {number}"),
+            runtime_s: Some(300.0),
+            airdate: None,
+            summary: None,
+            provider_episode_id: number.to_string(),
+        }
+    }
+
+    fn text(number: u32, kind: TextKind) -> ReferenceText {
+        ReferenceText {
+            show_ref: episode(number).show_ref,
+            ordering: EpisodeOrdering::Aired,
+            episode: EpisodeKey { season: 1, number },
+            kind,
+            provider: ProviderId::Lrclib,
+            provider_ref: number.to_string(),
+            text: "words".into(),
+            language: "en".into(),
+            fetched_at_ms: 0,
+        }
+    }
+
+    #[test]
+    fn a_show_is_musical_when_half_of_its_episodes_have_lyrics() {
+        let episodes: Vec<Episode> = (1..=10).map(episode).collect();
+        // One episode titled like a song, and no subtitles at all (no SubDL key).
+        assert!(!show_is_musical(&episodes, &[text(3, TextKind::Lyrics)]));
+        let half: Vec<ReferenceText> = (1..=5).map(|n| text(n, TextKind::Lyrics)).collect();
+        assert!(show_is_musical(&episodes, &half));
+        // Two lyrics records for one episode count once.
+        let one = [text(3, TextKind::Lyrics), text(3, TextKind::Lyrics)];
+        assert!(!show_is_musical(&episodes[..3], &one));
+        assert!(!show_is_musical(&episodes, &[text(1, TextKind::Subtitles)]));
     }
 }

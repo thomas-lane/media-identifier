@@ -390,6 +390,8 @@ pub struct FakeSpeech {
     pub missing_model: bool,
     /// Time each window takes, so a test can cancel mid-job.
     pub delay: Duration,
+    /// Every window transcribed, with whether voice activity detection was on.
+    pub heard: Arc<Mutex<Vec<(FileId, SampleWindow, bool)>>>,
 }
 
 impl FakeSpeech {
@@ -398,6 +400,7 @@ impl FakeSpeech {
             script,
             missing_model: false,
             delay: Duration::ZERO,
+            heard: Arc::default(),
         }
     }
 }
@@ -405,6 +408,7 @@ impl FakeSpeech {
 struct FakeListener {
     script: Script,
     delay: Duration,
+    heard: Arc<Mutex<Vec<(FileId, SampleWindow, bool)>>>,
 }
 
 impl SpeechEngine for FakeSpeech {
@@ -417,6 +421,7 @@ impl SpeechEngine for FakeSpeech {
         Ok(Box::new(FakeListener {
             script: self.script.clone(),
             delay: self.delay,
+            heard: Arc::clone(&self.heard),
         }))
     }
 }
@@ -427,9 +432,13 @@ impl Listener for FakeListener {
         file: &MediaFile,
         window: SampleWindow,
         _samples: &[f32],
-        _options: &DecodeOptions,
+        options: &DecodeOptions,
         cancel: &CancelFlag,
     ) -> mi_transcribe::Result<Vec<Segment>> {
+        self.heard
+            .lock()
+            .unwrap()
+            .push((file.id.clone(), window, options.vad));
         let until = Instant::now() + self.delay;
         while Instant::now() < until {
             if cancel.is_cancelled() {

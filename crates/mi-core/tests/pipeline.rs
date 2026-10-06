@@ -4,6 +4,7 @@
 mod common;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
@@ -296,6 +297,154 @@ async fn uncertain_long_files_are_listened_to_further() {
     let m = &final_matches(&h.recorder.events())[&FileId("title_t01.mkv".into())];
     assert_eq!(suggested(m), Some(key(2)));
     assert_eq!(m.confidence.verdict, Verdict::Confident);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_found_to_be_mostly_music_is_heard_further_without_voice_detection() {
+    let folder = std::path::PathBuf::from("/disc");
+    // Two rips of one musical episode of a spoken show: the duplicate left without an episode is
+    // uncertain, so it is heard further.
+    let files = vec![
+        media_file(&folder, "title_t01.mkv", 1200.0, FileRole::Candidate),
+        media_file(&folder, "title_t02.mkv", 1200.0, FileRole::Candidate),
+    ];
+    let media = FakeMedia::new(scan(&folder, files));
+    let mut lines: Vec<(f64, String)> = Vec::new();
+    for t in [180.0, 480.0, 780.0, 1020.0] {
+        for k in 0..3 {
+            lines.push((t + 5.0 * f64::from(k), "♪♪".to_owned()));
+        }
+    }
+    lines.extend(story_lines(1, 200.0));
+    let script: Script = [
+        (FileId("title_t01.mkv".into()), lines.clone()),
+        (FileId("title_t02.mkv".into()), lines),
+    ]
+    .into();
+    let speech = FakeSpeech::new(script);
+    let heard = Arc::clone(&speech.heard);
+    let h = harness(media, FakeCatalog::with_subtitles(), speech);
+    let job = h.engine.start_job(request(&folder)).unwrap();
+    h.recorder.wait_for_end(&job).await;
+
+    let heard = heard.lock().unwrap().clone();
+    let planned =
+        mi_transcribe::plan_windows(1200.0, &mi_transcribe::SamplingPolicy::default(), true);
+    let (first, further) = heard.split_at(2 * planned.len());
+    assert!(!further.is_empty(), "{heard:?}");
+    assert!(first.iter().all(|(_, _, vad)| *vad), "{first:?}");
+    assert!(further.iter().all(|(_, _, vad)| !*vad), "{further:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_read_from_its_own_subtitles_is_not_heard_further() {
+    let folder = std::path::PathBuf::from("/disc");
+    // Two rips of one episode, both with text subtitles: the duplicate left without an episode is
+    // uncertain, but hearing more of it cannot change dialogue read from its subtitles.
+    let names = ["title_t01.mkv", "title_t02.mkv"];
+    let files = names
+        .iter()
+        .map(|n| with_text_subtitles(media_file(&folder, n, 1200.0, FileRole::Candidate)))
+        .collect();
+    let mut media = FakeMedia::new(scan(&folder, files));
+    let srt: String = STORIES[3]
+        .split(". ")
+        .enumerate()
+        .map(|(i, line)| {
+            format!(
+                "{}\n00:00:{:02},000 --> 00:00:{:02},500\n{line}\n\n",
+                i + 1,
+                i * 3,
+                i * 3 + 2
+            )
+        })
+        .collect();
+    for n in names {
+        media.subtitles.insert(FileId(n.into()), srt.clone());
+    }
+    let h = harness(
+        media,
+        FakeCatalog::with_subtitles(),
+        FakeSpeech::new(Script::new()),
+    );
+    let job = h.engine.start_job(request(&folder)).unwrap();
+    h.recorder.wait_for_end(&job).await;
+    let matches = final_matches(&h.recorder.events());
+    assert!(
+        matches
+            .values()
+            .any(|m| m.confidence.verdict == Verdict::Check),
+        "{matches:?}"
+    );
+    let planned =
+        mi_transcribe::plan_windows(1200.0, &mi_transcribe::SamplingPolicy::default(), true);
+    for n in names {
+        assert_eq!(h.media.decoded_windows(n).len(), planned.len(), "{n}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_while_hearing_more_keeps_the_global_assignment() {
+    let folder = std::path::PathBuf::from("/disc");
+    // Two rips of one episode: matched alone, each claims the episode; the global assignment
+    // gives it to one of them.
+    let files = vec![
+        media_file(&folder, "title_t01.mkv", 1200.0, FileRole::Candidate),
+        media_file(&folder, "title_t02.mkv", 1200.0, FileRole::Candidate),
+    ];
+    let media = FakeMedia::new(scan(&folder, files));
+    let lines = story_lines(1, 200.0);
+    let script: Script = [
+        (FileId("title_t01.mkv".into()), lines.clone()),
+        (FileId("title_t02.mkv".into()), lines),
+    ]
+    .into();
+    let mut speech = FakeSpeech::new(script);
+    speech.delay = Duration::from_millis(40);
+    let h = harness(media, FakeCatalog::with_subtitles(), speech);
+    let job = h.engine.start_job(request(&folder)).unwrap();
+    // Cancel once further listening has started.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let events = h.recorder.events();
+        let matching = events.iter().position(|e| {
+            matches!(
+                e,
+                JobEvent::Stage {
+                    stage: Stage::Matching,
+                    ..
+                }
+            )
+        });
+        let listening_again = matching.is_some_and(|i| {
+            events[i..].iter().any(|e| {
+                matches!(
+                    e,
+                    JobEvent::File {
+                        status: FileStatus::Listening,
+                        ..
+                    }
+                )
+            })
+        });
+        if listening_again {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{events:?}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    h.engine.cancel_job(&job).unwrap();
+    assert!(matches!(
+        h.recorder.wait_for_end(&job).await,
+        JobEvent::Cancelled { .. }
+    ));
+    let results = h.engine.job_results(&job).unwrap();
+    let suggestions: Vec<_> = results.matches.iter().map(suggested).collect();
+    assert_eq!(suggestions.len(), 2);
+    assert!(
+        suggestions.contains(&None),
+        "only one file keeps the episode: {suggestions:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

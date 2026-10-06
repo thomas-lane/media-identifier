@@ -18,11 +18,12 @@ described in [sources.md](sources.md).
 
 ## Scanning and play-all detection
 
-<!-- owner: media module -->
-
 A scan (`mi_media::scan_folder`) lists the video files in the chosen folder by extension (`mkv`,
-`mp4`, `m4v`, `mov`, `avi`, `ts`, `m2ts`, `mts`, `mpg`, `mpeg`, `vob`, in any case). Subfolders
-are included only when the scan is asked to be recursive. Names starting with `.` are skipped:
+`mp4`, `m4v`, `mov`, `avi`, `ts`, `m2ts`, `mts`, `mpg`, `mpeg`, `vob`, in any case). Only the
+folder's own files are listed, not those in its subfolders: the play-all check below compares the
+longest file with all the others, which works only for the titles of one disc, and MakeMKV gives
+every disc's titles the same names, so each disc's folder is identified on its own. Names
+starting with `.` are skipped:
 besides hidden files, these are the `._title_t00.mkv` files macOS writes on network shares,
 which have a video extension but contain only file metadata.
 
@@ -97,8 +98,6 @@ pictures of text, which would need character recognition, so they are not used.
 
 ## Listening
 
-<!-- owner: transcribe module -->
-
 Speech is recognised locally with whisper.cpp, an implementation of OpenAI's Whisper speech
 model, compiled into the app. Two models are offered:
 
@@ -161,9 +160,10 @@ gives no segments. Skipping music beds and silence saves time and removes the ma
 invented text.
 
 VAD is used only for files longer than six minutes that are not music-heavy
-(`mi_transcribe::use_vad`; the caller decides what is music-heavy, for example a show whose
-reference text is song lyrics). The detector treats singing as non-speech in places and cuts sung
-words, and short files are mostly speech or song anyway.
+(`mi_transcribe::use_vad`). The detector treats singing as non-speech in places and cuts sung
+words, and short files are mostly speech or song anyway. The job decides what is music-heavy
+(see [mostly music](#mostly-music)): every file of a musical show, and, for further listening,
+any file whose first windows turned out to be mostly music.
 
 whisper.cpp has its own VAD step, but it runs only through the context-level `whisper_full` call;
 the per-state call that `whisper-rs` uses ignores the setting. The app therefore runs the detector
@@ -198,10 +198,7 @@ The filter is applied again whenever an escalation window adds segments, after s
 segments by time, so a line repeated across the boundary of two windows is caught too
 (`mi_transcribe::add_window`).
 
-
 ## Matching: signals
-
-<!-- owner: match module -->
 
 Matching lives in `crates/mi-match`. It reads no files and makes no network requests: it
 receives transcripts, reference texts, durations and audio fingerprints as plain values, so each
@@ -216,10 +213,16 @@ zero, so a file is never penalised for data a provider lacks.
 
 ### What is compared
 
-The *heard text* of a file is the dialogue of its own embedded text subtitle stream when it has
-one, and its transcript otherwise. Embedded subtitles are preferred because they are the file's
-exact dialogue; the title hook searches both, because a song's title may be sung but missing
-from its subtitles.
+The *heard text* of a file is the dialogue of its own embedded text subtitle stream when it has a
+usable one, and its transcript otherwise. Embedded subtitles are preferred because they are the
+file's exact dialogue; the title hook searches both, because a song's title may be sung but
+missing from its subtitles. A stream is used when both of these hold:
+
+- it is the first text (not bitmap) subtitle stream whose language tag matches the job's
+  language, or that has no language tag (subtitles in another language cannot be compared with
+  the episodes' reference text);
+- it holds at least 20 words (`PipelineConfig::min_embedded_words`), because a forced-subtitle
+  track that only translates a sign or two would otherwise replace a whole transcript.
 
 An episode's reference text is its subtitles and lyrics, joined. An episode with neither is
 compared through its summary (a summary reference text, or else the summary from the episode
@@ -280,7 +283,17 @@ length of both strings (RapidFuzz's `ratio`). A phrase with similarity 0.88
 or more counts as found; 0.6 or less (what unrelated phrases of equal length reach by chance)
 counts as not found; values between count in proportion. Each phrase is weighted by the sum of
 its words' IDF, so a phrase of common words counts little. Coverage is the weighted share of
-phrases found. Comparing every phrase with every stretch of an episode would be slow, so a
+phrases found.
+
+Being a share, coverage alone cannot tell lines every episode shares from distinctive dialogue:
+a file that holds only the theme song is fully covered by every episode. So coverage is scaled
+down when the heard phrases are much less specific than the episodes' dialogue: it is multiplied
+by the heard phrases' mean weight divided by half the mean weight of the reference texts' own
+phrases, capped at 1. Ordinary dialogue mixes common and distinctive words as the references do
+and is unaffected; theme lines alone keep only a small fraction of their coverage, so their
+dialogue similarity stays below the identity floor described under
+[Combined score](#combined-score). Comparing every phrase with every stretch of an episode would
+be slow, so a
 phrase is compared only where one of its rarer words occurs in the reference (same phonetic code,
 at most 12 positions, rarest words first), with the stretch shifted by one word either way to
 absorb a dropped or inserted word.
@@ -327,8 +340,11 @@ scores 0, 0.95 or more scores 1, linear between.
 The result is multiplied by the title's *specificity*: the letters in its words other than
 common function words, divided by 10 and kept between 0.25 and 1 (0.15 for a title made only of
 function words). "Conjunction Junction" is fully specific; "Pilot" (0.5) and "The End" (0.3) are
-weighted down because they are heard by chance. When too little was heard for the dialogue signal,
-the title hook is measured only if the title was found, for the same reason.
+weighted down because they are heard by chance. When too little was heard for the dialogue
+signal, the title hook is measured only if some episode's title was found in the file, for the
+same reason; then it is measured for every episode, at 0 for titles not found, so a heard title
+raises its episode above the others rather than lowering it below episodes judged on length
+alone.
 
 ### Length
 
@@ -346,18 +362,23 @@ length signal (`crates/mi-match/src/duration.rs`) is forgiving:
 ### Combined score
 
 The combined score of a pair is the weighted mean of its measured signals, with weights dialogue
-0.55, title hook 0.15, length 0.10 and disc order 0.20. For a file the transcriber marked as
-mostly music the title hook weight is doubled, because sung words are transcribed less reliably
-than a title repeated in a chorus.
+0.55, title hook 0.15, length 0.10 and disc order 0.20. For a file that is
+[mostly music](#mostly-music) the title hook weight is doubled, because sung words are
+transcribed less reliably than a title repeated in a chorus.
 
 Length and disc order can say which of several episodes a file fits, but not whether it is an
 episode at all: a 22-minute bonus feature fits a 22-minute runtime perfectly. So when an episode
 has dialogue text, the dialogue was measured, and neither the dialogue reaches 0.3 nor the title
 hook 0.5, the mean is multiplied by the dialogue score divided by 0.3. A file whose dialogue
 resembles no episode then scores low against all of them and becomes an extra. Files located
-inside a play-all that is used are exempt (see
+inside a play-all that is used are exempt for regular episodes, though not for specials (see
 [the play-all as an answer key](#matching-the-play-all-as-an-answer-key)), and so are
 comparisons with summaries, which are too weak to rule an episode out.
+
+A file in which nothing usable was heard (no dialogue measured and no title found) scores on
+length alone, which fits every episode of the right runtime equally. Such a file is still
+suggested an episode when one is left over, but never at the expense of a file in which
+something was heard (see [Assignment](#assignment)).
 
 ### Evidence shown on the Review screen
 
@@ -380,13 +401,11 @@ Each pair carries its signals and the evidence the Review screen shows:
 | Title heard | title hook 0.5 or more |
 | Length mismatch | length signal below 0.3 |
 | No speech | nothing was heard |
-| Mostly music | the transcriber marked the file as mostly music |
+| Mostly music | the file is [mostly music](#mostly-music) |
 | No reference text | the episode has no dialogue text and no summary |
 | Sampled (windows) | only sample windows of the file were transcribed |
 
 ## Matching: the play-all as an answer key
-
-<!-- owner: match module -->
 
 A disc's play-all title contains its short titles back to back, usually as the very same audio.
 Finding where each short file sits inside it gives the files' order on the disc, which helps
@@ -429,10 +448,18 @@ shorter than about 3 seconds are not aligned.
 ### Disc order
 
 `mi_match::derive_disc_order` turns the alignments into an order. A file whose strength is below
-0.35 is not located. When two files land on the same range (one covers more than half of the
-other), they are duplicates of one title: the stronger keeps the position and the other counts as
-not located. Each position records its rank, its start and end, and the play-all chapter that
-contains the point one second after its start. The order is *trustworthy* when all of these
+0.35 is not located. When two files land on the same range (they share more than half of the
+shorter one):
+
+- if their lengths are similar (the shorter at least 80% of the longer), they are duplicates of
+  one title: the stronger alignment keeps the position and the other counts as not located;
+- otherwise the shorter file lies inside the longer one's title, such as a theme-song extra that
+  matches the opening of an episode, and the shorter file counts as not located, whatever its
+  strength. Correlation strengths of a 20-second file and a 22-minute file are not comparable,
+  and a short file must never take an episode's place in the order.
+
+Each position records its rank, its start and end, and the play-all chapter that contains the
+point one second after its start. The order is *trustworthy* when all of these
 hold:
 
 1. at least two files, and at least half of the files, are located;
@@ -460,15 +487,27 @@ file itself) bound which episodes it can be:
 
 - an episode outside that range scores 0 (it would break the order);
 - the episode that continues an anchor's sequence scores 1: the episode as many places after the
-  earlier anchor's episode as the file is after that anchor in the play-all, or as many places
+  earlier anchor's episode as the file is after that anchor on the disc, or as many places
   before the later anchor's episode as the file is before it;
 - any other episode inside the range scores 0.6.
 
 With no anchors the signal is not measured, because the order alone favours no episode.
 
-## Matching: assignment and confidence
+**Places on the disc.** A file's place is normally its rank among the located files. A title
+missing from the rip (MakeMKV drops titles shorter than its minimum length) would then shift
+every episode after it by one. So when the play-all's chapters mark its titles (every located
+file starts a chapter, and files that follow each other without a gap are one chapter apart), a
+skipped chapter counts as a missing place, provided the time it fills is at least half the
+median length of the located files. A skipped short chapter is a bumper or logo rather than an
+episode and does not count. When chapters do not mark titles (several chapters per episode, or
+none), ranks are used.
 
-<!-- owner: match module -->
+**Specials.** Episode lists sort specials (season 0) before season 1, whatever their place on the
+disc, so specials take no part in the order: a file the content identifies as a special is not
+an anchor, specials get no disc order signal, and a located file is compared with a special
+under the same identity rule as an unlocated one.
+
+## Matching: assignment and confidence
 
 ### Assignment
 
@@ -481,13 +520,22 @@ an extra.
   algorithm from the `pathfinding` crate), which finds the one-to-one assignment with the largest
   total. Each file also has its own "no episode" option scored 0.25, so a file is left unmatched
   rather than forced onto a poor episode.
-- **With a usable disc order**, the located files, in play-all order, are matched to the episodes,
-  in episode-list order, by dynamic programming that keeps both orders rising and maximises the
-  total of `score − 0.25`. Skipping an episode is free, because a disc rarely holds every
-  episode; leaving a file unmatched costs 0.10. A file found in the play-all is part of the
+- **With a usable disc order**, the located files, in play-all order, are matched to the regular
+  episodes, in episode-list order, by dynamic programming that keeps both orders rising and
+  maximises the total of `score − 0.25`. Skipping an episode is free, because a disc rarely holds
+  every episode; leaving a file unmatched costs 0.10, or, when a special suits the file better
+  than that, is worth the special's `score − 0.25`, so a special on the disc is left for the next
+  step instead of being forced into the sequence. A file found in the play-all is part of the
   disc's main sequence, which holds episodes, so it can be matched with a score as low as 0.15
-  instead of 0.25. The files that were not located are then matched by Hungarian assignment to
-  the episodes left over.
+  instead of 0.25. The files that were not located, and the located files the order left out,
+  are then matched by Hungarian assignment to the episodes left over. This lets a file whose
+  place contradicts the order (the order is used when only three of four anchors agree) still
+  receive its own episode when no other file took it.
+
+In both Hungarian steps, files in which something was heard (dialogue measured or a title found)
+are assigned first and files with nothing heard afterwards, to the episodes still free. Without
+this, a silent bonus feature of episode length, which scores on length alone, could take an
+episode from a weaker but real match.
 
 ### Confidence
 
@@ -515,12 +563,24 @@ episode came within the confident margin of the "no episode" level. The job
 (`mi_core::pipeline`) then listens further in at most two rounds (`PipelineConfig::max_escalations`):
 the first adds one window in each gap between the windows already heard, the second transcribes
 the rest of the file. After each round every file is matched again, so the global assignment sees
-the new text; a round that adds nothing ends the escalation. Files transcribed whole, and files
-whose audio could not be decoded, are not listened to again.
+the new text, and the results are sent to the window, so a job cancelled during further listening
+keeps the latest global assignment; a round that adds nothing ends the escalation. Files
+transcribed whole, files whose audio could not be decoded, and files whose dialogue comes from
+their embedded subtitles (more audio could change only the title hook, which is also searched in
+the subtitles) are not listened to again.
 
-A file counts as *mostly music* (which raises the title hook's weight and turns voice activity
-detection off) when the show's reference texts are mostly lyrics, or when more than half of the
-file's recognised segments are music notes or were rated as non-speech.
+### Mostly music
+
+Two related rules decide how music is treated (`mi_core::pipeline`):
+
+- A **musical show** is one where at least half of the episodes have lyrics as reference text.
+  Every file of a musical show is decoded without voice activity detection and counts as mostly
+  music. Episodes are counted rather than texts, so one episode whose title matches a song does
+  not make a whole show musical.
+- A file is **mostly music** when its show is musical, or when more than half of its recognised
+  segments are music notes or were rated as non-speech. This doubles its title hook weight, and a
+  file found to be mostly music is decoded without voice activity detection when it is heard
+  further, so the sung words that settle it are not cut.
 
 ### Settings
 

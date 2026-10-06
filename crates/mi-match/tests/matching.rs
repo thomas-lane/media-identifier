@@ -600,3 +600,216 @@ fn inconsistent_input_is_rejected() {
         Err(MatchError::InvalidInput(_))
     ));
 }
+
+/// A disc order with the given files at consecutive chapters (`(file index, chapter)`), each a
+/// full episode long.
+fn order_at(files: &[FileInput], at: &[(usize, u32)]) -> DiscOrder {
+    DiscOrder {
+        positions: at
+            .iter()
+            .enumerate()
+            .map(|(rank, &(f, chapter))| {
+                let start_s = f64::from(chapter) * RUNTIME_S;
+                (
+                    files[f].file_id.clone(),
+                    PlayAllPosition {
+                        chapter: Some(chapter),
+                        start_s,
+                        end_s: start_s + RUNTIME_S,
+                        order_index: rank as u32,
+                        alignment_score: 0.9,
+                    },
+                )
+            })
+            .collect(),
+        trustworthy: true,
+        problem: None,
+    }
+}
+
+const FEW_WORDS: &str = "la la la mm hmm oh yeah la la uh huh oh";
+
+#[test]
+fn a_heard_title_raises_its_episode_when_too_few_words_were_heard_for_dialogue() {
+    // A sung short: fewer content words than dialogue needs, but its title is clear.
+    let input = MatchInput {
+        files: vec![file(
+            "song.mkv",
+            "la la the lion and the mouse la la oh".into(),
+            RUNTIME_S,
+        )],
+        episodes: episodes_with_subtitles(),
+        disc_order: None,
+    };
+    let m = &run(&input)[0];
+    assert_eq!(suggested(m), Some(key(3)), "{m:?}");
+    assert_eq!(m.candidates[0].episode, key(3));
+    let other = m.candidates.iter().find(|c| c.episode != key(3)).unwrap();
+    assert!(m.candidates[0].score > other.score, "{m:?}");
+    assert_eq!(other.evidence.signals.title_hook, Some(0.0));
+}
+
+#[test]
+fn shared_theme_lines_alone_are_not_dialogue() {
+    // Opening credits or a theme-song video: only lines every episode shares, heard cleanly.
+    let theme = format!("{THEME_OPEN} {THEME_CLOSE}");
+    for duration_s in [95.0, RUNTIME_S] {
+        let input = MatchInput {
+            files: vec![file("credits.mkv", theme.clone(), duration_s)],
+            episodes: episodes_with_subtitles(),
+            disc_order: None,
+        };
+        let m = &run(&input)[0];
+        let floor = MatchConfig::default().identity_floor;
+        for c in &m.candidates {
+            let d = c.evidence.signals.dialogue.unwrap();
+            assert!(
+                d < floor,
+                "{duration_s} s: dialogue {d} for {:?}",
+                c.episode
+            );
+        }
+        assert_eq!(
+            m.suggestion,
+            Suggestion::NotAnEpisode,
+            "{duration_s} s: {m:?}"
+        );
+    }
+}
+
+#[test]
+fn a_located_file_out_of_order_still_gets_its_free_episode() {
+    // Play-all order: episodes 1, 2, 6, 3, 4. Four of five anchors are in order, so the order is
+    // used, and it cannot place the file holding episode 6.
+    let episodes_on_disc = [0usize, 1, 5, 2, 3];
+    let files: Vec<FileInput> = episodes_on_disc
+        .iter()
+        .enumerate()
+        .map(|(n, &ep)| {
+            file(
+                &format!("t{n:02}.mkv"),
+                mishear(&episode_text(ep), Errors::MODERATE, 70 + n as u64),
+                RUNTIME_S - 10.0,
+            )
+        })
+        .collect();
+    let order = order_at(&files, &[(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]);
+    let input = MatchInput {
+        files,
+        episodes: episodes_with_subtitles(),
+        disc_order: Some(order),
+    };
+    let outcome = match_with_outcome(&input, &MatchConfig::default(), &CancelFlag::new()).unwrap();
+    assert_eq!(outcome.disc_order, DiscOrderUse::Used);
+    for (f, m) in outcome.matches.iter().enumerate() {
+        assert_eq!(
+            suggested(m),
+            Some(key(episodes_on_disc[f])),
+            "file {f}: {m:?}"
+        );
+    }
+}
+
+#[test]
+fn a_special_at_the_end_of_the_disc_keeps_its_own_episode() {
+    // Episode lists sort specials (season 0) first, whatever their place on the disc.
+    let mut episodes = episodes_with_subtitles();
+    let mut special = episodes.remove(9);
+    special.episode.key = EpisodeKey {
+        season: 0,
+        number: 1,
+    };
+    for t in &mut special.texts {
+        t.episode = special.episode.key;
+    }
+    episodes.insert(0, special);
+    let on_disc = [0usize, 1, 2, 9];
+    let files: Vec<FileInput> = on_disc
+        .iter()
+        .enumerate()
+        .map(|(n, &ep)| {
+            file(
+                &format!("t{n:02}.mkv"),
+                mishear(&episode_text(ep), Errors::MODERATE, 80 + n as u64),
+                RUNTIME_S - 10.0,
+            )
+        })
+        .collect();
+    let order = order_at(&files, &[(0, 0), (1, 1), (2, 2), (3, 3)]);
+    let input = MatchInput {
+        files,
+        episodes,
+        disc_order: Some(order),
+    };
+    let matches = run(&input);
+    for (f, m) in matches.iter().take(3).enumerate() {
+        assert_eq!(suggested(m), Some(key(on_disc[f])), "file {f}: {m:?}");
+    }
+    let special_key = EpisodeKey {
+        season: 0,
+        number: 1,
+    };
+    assert_eq!(
+        suggested(&matches[3]),
+        Some(special_key),
+        "{:?}",
+        matches[3]
+    );
+}
+
+#[test]
+fn a_title_missing_from_the_rip_shifts_the_order_by_its_chapter() {
+    // Chapters 0-5 hold episodes 1-6; chapter 2's title (episode 3) was not ripped. The files at
+    // chapters 3 and 4 were heard as almost nothing.
+    let files = vec![
+        file(
+            "a.mkv",
+            mishear(&episode_text(0), Errors::MODERATE, 90),
+            RUNTIME_S,
+        ),
+        file(
+            "b.mkv",
+            mishear(&episode_text(1), Errors::MODERATE, 91),
+            RUNTIME_S,
+        ),
+        file("c.mkv", FEW_WORDS.into(), RUNTIME_S),
+        file("d.mkv", FEW_WORDS.into(), RUNTIME_S),
+    ];
+    let order = order_at(&files, &[(0, 0), (1, 1), (2, 3), (3, 4)]);
+    let input = MatchInput {
+        files,
+        episodes: episodes_with_subtitles(),
+        disc_order: Some(order),
+    };
+    let matches = run(&input);
+    let got: Vec<_> = matches.iter().map(suggested).collect();
+    assert_eq!(
+        got,
+        [Some(key(0)), Some(key(1)), Some(key(3)), Some(key(4))],
+        "{matches:?}"
+    );
+}
+
+#[test]
+fn a_silent_bonus_feature_never_takes_an_episode_from_a_file_that_matches_it() {
+    let mut files = misheard_files(Errors::MODERATE, 5);
+    files.push(file("silent.mkv", String::new(), RUNTIME_S));
+    files.push(file(
+        "filler.mkv",
+        "thank you thanks hey wow".into(),
+        RUNTIME_S + 10.0,
+    ));
+    let input = MatchInput {
+        files,
+        episodes: episodes_with_subtitles(),
+        disc_order: None,
+    };
+    let matches = run(&input);
+    for (n, m) in matches[..10].iter().enumerate() {
+        assert_eq!(suggested(m), Some(key(ORDER[n])), "file {n}: {m:?}");
+    }
+    for m in &matches[10..] {
+        assert_eq!(m.suggestion, Suggestion::NotAnEpisode, "{m:?}");
+        assert_ne!(m.confidence.verdict, Verdict::Confident);
+    }
+}
